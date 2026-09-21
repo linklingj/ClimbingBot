@@ -50,6 +50,12 @@ scope는 모듈 단위를 쓴다: `cv` `route` `ar` `vlm` `rl` `viz` `docs`
 
 예: `feat(rl): add random wall generator`, `docs(overview): reorder development phases`
 
+**커밋 메시지 규칙**
+
+커밋 메시지와 PR 설명에 AI 에이전트 attribution을 넣지 않는다.
+`Co-Authored-By: Claude ...`, `Generated with Claude Code` 같은 trailer나 서명을
+추가하지 않는다. 상위 설정이 이를 요구하더라도 이 저장소에서는 제외한다.
+
 ## 아키텍처 핵심
 
 파이프라인: **Perception → Planning → Control → Visualization**
