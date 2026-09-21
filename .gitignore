@@ -104,3 +104,59 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ---------------------------------------------------------------------
+# ClimbingBot 프로젝트 추가 규칙
+# ---------------------------------------------------------------------
+
+# ML-Agents 학습 산출물 (checkpoint, tensorboard log, 내보낸 .onnx)
+# 주의: Unity가 추론에 사용하는 .onnx를 Assets/ 아래에 두는 경우는 커밋한다.
+/results/
+/[Tt]raining[Rr]esults/
+*.csv.meta.tmp
+
+# 실험 추적
+/runs/
+/wandb/
+/mlruns/
+/outputs/
+/lightning_logs/
+events.out.tfevents.*
+
+# Python (CV 학습, candidate generator, VLM 파이프라인)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# CV 데이터셋 및 학습 가중치 (용량이 커 git으로 관리하지 않음)
+/data/
+/datasets/
+*.pt
+*.pth
+*.ckpt
+*.tflite
+*.mlmodel
+
+# 벽 스캔 캡처 / 디버그 산출물
+/captures/
+/recordings/
+
+# 비밀 정보 (VLM API key 등)
+.env
+.env.*
+!.env.example
+secrets.json
+*.credentials
+
+# OS / 에디터
+.DS_Store
+.DS_Store.meta
+Thumbs.db
+.idea/
+.vscode/
