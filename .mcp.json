@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "unity-editor-mcp": {
+      "type": "stdio",
+      "command": "unity",
+      "args": [
+        "mcp",
+        "--project-path",
+        "/Users/jaehyun/Documents/Projects/DL/ClimbingBot/ClimbingBotUnity"
+      ],
+      "env": {}
+    }
+  }
+}
