@@ -50,6 +50,19 @@ Frame
 홀드 ID는 한 scene 안에서 유일해야 한다. VLM, RL, AR 모두 동일 ID를
 사용한다.
 
+## Phase 1 구현과의 차이
+
+Unity 쪽 `Hold`는 start/top을 **홀드 자신의 `role`**
+(`Normal`/`Start`/`Top`)로 들고 있다. 위 Scene JSON처럼 route가
+`start_hold_ids`/`top_hold_id`로 갖고 있지 않다.
+
+Phase 1은 벽 하나에 루트가 하나뿐이라 route 객체가 없기 때문이다. 같은
+홀드가 루트마다 다른 역할을 갖는 상황이 생기는 Phase 2에서 역할을
+`Route`로 옮긴다. 그때 JSON 계약이 정본이다.
+
+`ClimbingWall`은 위 좌표 규칙을 그대로 따른다 --- 원점은 벽 좌하단, +X
+오른쪽, +Y 위, 단위 meter. `Hold.wallPosition`이 그 좌표다.
+
 ## 좌표 규칙
 
 모듈 간 전달에는 가능한 한 `wall-local normalized/metric coordinate`를

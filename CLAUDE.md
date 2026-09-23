@@ -4,11 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 현재 상태
 
-설계 단계. `docs/`에 기획 문서만 있고 `src/`는 비어 있다. Unity 프로젝트를 전제로 한
-`.gitignore`가 있으나 아직 Unity 프로젝트가 생성되지 않았다.
+Phase 1 (RL Controller) 진행 중. `ClimbingBotUnity/`가 Unity 6000.3 URP 프로젝트이고
+ML-Agents 4.1.0, AR Foundation이 들어 있다. `src/`는 아직 비어 있다.
 
-빌드/테스트/린트 명령은 아직 존재하지 않는다. Unity 프로젝트나 Python 학습 코드가
-추가되면 그 시점에 이 섹션을 실제 명령으로 갱신할 것.
+```
+ClimbingBotUnity/Assets/
+  00Scenes/Train.unity        학습 씬 (벽 + ragdoll + 바닥)
+  01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
+  01Scripts/Wall/             ClimbingWall, Hold
+  02Ragdoll/                  ragdoll FBX / prefab / 머티리얼
+  03Wall/Materials/           벽·홀드 머티리얼
+```
+
+끝난 것: ragdoll, grasp/release, 벽과 홀드, 랜덤 벽 생성기, 클리어 판정.
+다음: `ClimbingAgent` (observation / action / reward).
+
+빌드/테스트/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서
+`Physics.Simulate`를 돌려서 한다. Python 학습 코드가 추가되면 이 섹션을 실제
+명령으로 갱신할 것.
+
+**물리 설정 주의.** ragdoll은 Unity 기본 솔버 설정으로는 무너진다.
+`Physics.defaultSolverIterations`/`defaultSolverVelocityIterations`를 12/12로
+유지할 것. 자세한 이유는 `docs/05`.
 
 ## 작업 전 필수
 

@@ -42,7 +42,13 @@ namespace ClimbingBot
 
         public JointDriveController JdController { get; private set; }
 
-        readonly Dictionary<Limb, FixedJoint> m_Grasps = new Dictionary<Limb, FixedJoint>();
+        struct Grip
+        {
+            public FixedJoint joint;
+            public Hold hold;
+        }
+
+        readonly Dictionary<Limb, Grip> m_Grips = new Dictionary<Limb, Grip>();
         static readonly Limb[] k_Limbs = { Limb.LeftHand, Limb.RightHand, Limb.LeftFoot, Limb.RightFoot };
 
         void Awake()
@@ -87,19 +93,33 @@ namespace ClimbingBot
 
         public bool IsGrasping(Limb limb)
         {
-            return m_Grasps.ContainsKey(limb);
+            return m_Grips.ContainsKey(limb);
         }
 
-        public bool CanGrasp(Limb limb, Vector3 holdPosition)
+        public Hold GraspedHold(Limb limb)
         {
-            return !IsGrasping(limb) &&
-                Vector3.Distance(LimbTransform(limb).position, holdPosition) <= graspRadius;
+            return m_Grips.TryGetValue(limb, out var grip) ? grip.hold : null;
+        }
+
+        /// <summary>Route is cleared when both hands are on the top hold.</summary>
+        public bool IsToppedOut => IsOnTop(Limb.LeftHand) && IsOnTop(Limb.RightHand);
+
+        bool IsOnTop(Limb limb)
+        {
+            var hold = GraspedHold(limb);
+            return hold != null && hold.role == HoldRole.Top;
+        }
+
+        public bool CanGrasp(Limb limb, Hold hold)
+        {
+            return hold != null && !IsGrasping(limb) &&
+                Vector3.Distance(LimbTransform(limb).position, hold.transform.position) <= graspRadius;
         }
 
         /// <summary>Pins the limb where it currently is. Returns false if out of range or already grasping.</summary>
-        public bool Grasp(Limb limb, Vector3 holdPosition)
+        public bool Grasp(Limb limb, Hold hold)
         {
-            if (!CanGrasp(limb, holdPosition))
+            if (!CanGrasp(limb, hold))
             {
                 return false;
             }
@@ -107,20 +127,20 @@ namespace ClimbingBot
             var joint = LimbTransform(limb).gameObject.AddComponent<FixedJoint>();
             // Holds are static geometry, so anchor to the world rather than to a hold Rigidbody.
             joint.connectedBody = null;
-            m_Grasps[limb] = joint;
+            m_Grips[limb] = new Grip { joint = joint, hold = hold };
             return true;
         }
 
         public void Release(Limb limb)
         {
-            if (!m_Grasps.TryGetValue(limb, out var joint))
+            if (!m_Grips.TryGetValue(limb, out var grip))
             {
                 return;
             }
 
             // Immediate, not deferred: a grasp surviving into the next physics step would fight an episode reset.
-            DestroyImmediate(joint);
-            m_Grasps.Remove(limb);
+            DestroyImmediate(grip.joint);
+            m_Grips.Remove(limb);
         }
 
         public void ResetBody()

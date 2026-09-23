@@ -45,6 +45,21 @@ ML-Agents `Walker` 예제의 ragdoll을 그대로 가져와 클라이밍용으�
 -   `GroundContact`가 쓰는 `"ground"` 태그를 프로젝트에 추가했다. 추락
     판정에 그대로 쓴다.
 
+### 물리 설정 (필수)
+
+이 ragdoll은 Unity 기본 물리 설정으로는 관절이 늘어나 무너진다.
+프로젝트 설정을 ml-agents 쪽과 맞췄다.
+
+-   `Physics.defaultSolverIterations` 12 (기본 6)
+-   `Physics.defaultSolverVelocityIterations` 12 (기본 1)
+
+중력은 실제값(-9.81)을 쓴다. Walker 씬은 1.5배를 쓰지만 그건 보행을 덜
+붕 뜨게 하려는 값이고, 클라이밍은 사람 동작의 타당성을 보는 쪽이 맞다.
+
+컨트롤러가 없는 동안 ragdoll은 바닥에 주저앉는다. 정상이다. 이때
+slerpDrive가 T자세로 복원하려 밀기 때문에 얇은 바닥은 다리가 뚫고
+내려간다. 학습 씬 바닥은 두껍게(2 m) 둔다.
+
 관절 가동범위는 Walker 값을 그대로 유지한다. 어깨 (-60°\~120° / ±100°),
 팔꿈치 (0°\~160°)는 머리 위 리치에 충분하지만, 고관절 외전 (±40°)은
 클라이밍 자세에는 좁을 수 있다. 학습 결과를 보고 조정한다.
@@ -116,6 +131,19 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
     그 범위 안에 머문다.
 -   release는 `DestroyImmediate`로 즉시 제거한다. 다음 physics step까지
     남으면 episode reset과 충돌한다.
+-   `Grasp(limb, hold)`는 어느 홀드를 잡았는지 기억한다. 클리어 판정에
+    필요하다.
+
+측정: 중간 홀드를 한 손으로 잡고 2초간 매달렸을 때 손 드리프트
+0.026 m, 발은 공중 1.93 m. `FixedJoint`가 체중을 버틴다.
+
+## 클리어 판정
+
+`ClimberRagdoll.IsToppedOut` --- **양손이 모두 `Top` 홀드를 잡고 있을
+때** 참이다. 한 손만 top이거나, 한 손이 다른 홀드에 있으면 거짓이다.
+
+발은 보지 않는다. 실제 클라이밍의 탑 판정(두 손으로 탑 홀드 유지)과
+같고, 발까지 요구하면 불필요하게 어려워진다.
 
 ## Action Masking
 
@@ -151,15 +179,47 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 
 -   VLM이 생성한 target pose 수행
 
+## 벽과 홀드
+
+`ClimbingWall` (`Assets/01Scripts/Wall/ClimbingWall.cs`)
+
+-   transform은 벽의 **좌하단**에 둔다. +X 오른쪽, +Y 위, 등반자는 -Z
+    쪽. `docs/07`의 좌표 규칙과 같다.
+-   `WallToWorld(Vector2)`가 wall-local 2D(m)를 월드로 변환한다.
+-   크기는 고정: 4.0 m × 6.0 m, 두께 0.3 m. 홀드 배치만 랜덤이다.
+-   slab과 홀드는 `Generate`가 전부 만든다. 에디터에서 치수를 바꾼 뒤
+    다시 생성하면 되고, 손으로 맞출 것이 없다.
+
+`Hold` (`Assets/01Scripts/Wall/Hold.cs`)
+
+-   `id` --- scene 안에서 유일. `docs/07`의 ID 규칙을 따른다.
+-   `color` --- `MaterialPropertyBlock`으로 적용한다. 홀드마다 머티리얼
+    인스턴스를 만들지 않기 위해서다.
+-   `role` --- `Normal` / `Start` / `Top`.
+-   `wallPosition` --- wall-local 2D 좌표.
+
 ## Random Wall Generator
 
-다양한 위치의 홀드를 생성한다.
+`ClimbingWall.Generate(seed)`가 한 줄기 루트를 만든다. 아래에서 위로
+`rowSpacing`(0.55 m)마다 홀드를 하나씩 놓고, 가로 위치만 랜덤하게
+움직인다.
 
-파라미터: - wall width/height - hold density - 최소 hold distance - 좌우
-분포 - 높이 progression
+**클리어 가능성은 rejection sampling이 아니라 구조적으로 보장한다.**
+연속한 두 홀드는 항상 세로로 `rowSpacing`만큼 떨어져 있으므로, 가로
+이동을 `sqrt(maxReach² - rowSpacing²)`로 제한하면 두 홀드 사이 거리가
+`maxReach`(0.9 m)를 넘을 수 없다. 벽 좌우 경계로 clamp하는 것은 가로
+이동을 줄이기만 하므로 이 보장을 깨지 않는다.
 
-학습 가능한 범위를 벗어난 불가능한 벽이 과도하게 생성되지 않도록
-feasibility constraint를 둔다.
+`maxReach` 0.9 m는 ragdoll 기준값이다 --- 키 1.97 m, 팔 스팬 1.95 m,
+hips에서 손까지 1.09 m.
+
+첫 홀드는 `Start`, 마지막 홀드는 `Top`이 된다.
+
+시드 200개로 검증했다: 벽마다 홀드 9개, 최대 연속 간격 0.899 m
+(`maxReach` 0.9 m), 경계 이탈 0건, role 오류 0건.
+
+밀도, 한 행에 여러 홀드, 좌우 분포 편향 등은 아직 없다. 학습이 이
+난이도를 넘어선 뒤에 붙인다.
 
 ## Reward 설계
 
