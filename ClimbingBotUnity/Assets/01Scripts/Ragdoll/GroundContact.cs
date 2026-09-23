@@ -22,18 +22,28 @@ public class GroundContact : MonoBehaviour
     /// </summary>
     void OnCollisionEnter(Collision col)
     {
-        if (col.transform.CompareTag(k_Ground))
+        if (!col.transform.CompareTag(k_Ground))
         {
-            touchingGround = true;
-            if (penalizeGroundContact)
-            {
-                agent.SetReward(groundContactPenalty);
-            }
+            return;
+        }
 
-            if (agentDoneOnGroundContact)
-            {
-                agent.EndEpisode();
-            }
+        touchingGround = true;
+
+        // The ragdoll runs without a controller too (manual testing now, AR playback later),
+        // so reward and episode signalling only apply when an agent is actually attached.
+        if (agent == null)
+        {
+            return;
+        }
+
+        if (penalizeGroundContact)
+        {
+            agent.SetReward(groundContactPenalty);
+        }
+
+        if (agentDoneOnGroundContact)
+        {
+            agent.EndEpisode();
         }
     }
 
