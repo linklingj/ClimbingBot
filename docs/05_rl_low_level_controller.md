@@ -27,6 +27,28 @@ hands/feet에 해당하는 limb endpoint
 Unity ML-Agents의 articulated body 제어 방식과 관절 관련
 observation/action 구조를 최대한 활용한다.
 
+### 구현
+
+ML-Agents `Walker` 예제의 ragdoll을 그대로 가져와 클라이밍용으로
+전용한다 (`Assets/02Ragdoll/ClimberRagdoll.prefab`).
+
+-   16 body part: hips, spine, chest, head, upper/lower arm L·R, hand
+    L·R, thigh/shin/foot L·R
+-   `ConfigurableJoint` + `JointDriveController`/`BodyPart`
+    (`Assets/01Scripts/Ragdoll/`, ML-Agents 예제에서 복사)
+-   손목 관절은 전부 locked이므로 hand는 forearm에 고정된 grasp
+    endpoint로 그대로 쓴다
+-   보행 전용 요소(WalkerAgent, ModelOverrider, DecisionRequester,
+    FootRays, DirectionIndicator, OrientationCube)는 제거했다.
+    DecisionRequester는 `Agent`를 요구하므로 controller 작성 시 다시
+    붙인다.
+-   `GroundContact`가 쓰는 `"ground"` 태그를 프로젝트에 추가했다. 추락
+    판정에 그대로 쓴다.
+
+관절 가동범위는 Walker 값을 그대로 유지한다. 어깨 (-60°\~120° / ±100°),
+팔꿈치 (0°\~160°)는 머리 위 리치에 충분하지만, 고관절 외전 (±40°)은
+클라이밍 자세에는 좁을 수 있다. 학습 결과를 보고 조정한다.
+
 ## Observation
 
 예시:
@@ -84,9 +106,16 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
 
 > 해당 limb endpoint를 target hold 위치에 물리적으로 고정한다.
 
-구현 후보: - ConfigurableJoint - FixedJoint - custom constraint
+구현: `ClimberRagdoll.Grasp/Release`
+(`Assets/01Scripts/Ragdoll/ClimberRagdoll.cs`)
 
-release 시 constraint를 제거한다.
+-   limb endpoint에 `FixedJoint`를 붙이고 `connectedBody = null`로 두어
+    월드에 고정한다. 홀드는 static geometry이므로 Rigidbody가 없다.
+-   고정 위치는 **홀드 중심이 아니라 limb의 현재 위치**다. 순간이동으로
+    인한 물리 pop을 피하기 위한 선택이고, grasp radius가 작으므로 오차는
+    그 범위 안에 머문다.
+-   release는 `DestroyImmediate`로 즉시 제거한다. 다음 physics step까지
+    남으면 episode reset과 충돌한다.
 
 ## Action Masking
 
@@ -100,6 +129,10 @@ distance(limb, target_hold) < grasp_threshold
 
 추가 조건 후보: - 해당 limb가 이미 grasp 중이면 다른 grasp 금지 - target
 hold가 현재 target pose에 포함될 때만 허용 - release 가능한 상태 제한
+
+`ClimberRagdoll.CanGrasp`가 거리 조건(`graspRadius`, 기본 0.2 m)과 "이미
+grasp 중이면 금지"까지 구현한다. 나머지 조건은 controller 쪽에서
+action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값이다.
 
 ## Training Strategy - Curriculum learning
 
