@@ -199,9 +199,12 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 -   transform은 벽의 **좌하단**에 둔다. +X 오른쪽, +Y 위, 등반자는 -Z
     쪽. `docs/07`의 좌표 규칙과 같다.
 -   `WallToWorld(Vector2)`가 wall-local 2D(m)를 월드로 변환한다.
--   크기는 고정: 4.0 m × 6.0 m, 두께 0.3 m. 홀드 배치만 랜덤이다.
--   slab과 홀드는 `Generate`가 전부 만든다. 에디터에서 치수를 바꾼 뒤
-    다시 생성하면 되고, 손으로 맞출 것이 없다.
+-   크기는 고정: 4.0 m × 6.0 m, 두께 0.3 m.
+-   `BuildSlab()`이 치수대로 slab을 만든다. 씬에 손으로 놓고 치수 필드를
+    따로 두면 둘이 어긋나므로 진실의 출처를 하나로 뒀다.
+-   `AddHold(id, wallPosition)` / `ClearHolds()`만 제공한다. **홀드를
+    어디에 놓을지는 벽이 정하지 않는다** --- Phase 1은 랜덤 생성기,
+    이후에는 CV 출력이 정한다.
 
 `Hold` (`Assets/01Scripts/Wall/Hold.cs`)
 
@@ -211,9 +214,16 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 -   `role` --- `Normal` / `Start` / `Top`.
 -   `wallPosition` --- wall-local 2D 좌표.
 
-## Random Wall Generator
+## Random Wall Generator (테스트 전용)
 
-`ClimbingWall.Generate(seed)`가 한 줄기 루트를 만든다. 아래에서 위로
+`RandomWallGenerator` (`Assets/01Scripts/Testing/`)
+
+**버릴 코드다.** 최종 시스템의 홀드는 CV 출력에서 온다. 이건 perception이
+없는 동안 Phase 1이 랜덤 레이아웃으로 학습하기 위한 것이라, 벽 안에 두지
+않고 `ClimbingWall`의 공개 API만 쓰는 별도 컴포넌트로 뺐다. 지울 때
+`ClimbingWall`은 건드리지 않는다.
+
+`Generate(seed)`가 한 줄기 루트를 만든다. 아래에서 위로
 `rowSpacing`(0.55 m)마다 홀드를 하나씩 놓고, 가로 위치만 랜덤하게
 움직인다.
 

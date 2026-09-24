@@ -4,8 +4,11 @@ using UnityEngine;
 namespace ClimbingBot
 {
     /// <summary>
-    /// A vertical wall of fixed size whose hold layout is randomized per episode.
+    /// A vertical wall of fixed size and the holds sitting on it.
     /// The transform sits at the wall's bottom-left corner: +X right, +Y up, climber on -Z.
+    ///
+    /// Where the holds go is somebody else's decision -- random generation during Phase 1 training,
+    /// CV output later. This only knows how to build one and how to look them up.
     /// </summary>
     public class ClimbingWall : MonoBehaviour
     {
@@ -14,24 +17,12 @@ namespace ClimbingBot
         public float height = 6f;
         public float thickness = 0.3f;
 
-        [Header("Hold layout")]
+        [Header("Holds")]
         public float holdRadius = 0.07f;
-        public float firstRowHeight = 0.7f;
-        public float rowSpacing = 0.55f;
-
-        [Tooltip("Upper bound on the distance between consecutive holds. Every generated wall stays climbable because the horizontal step is derived from this.")]
-        public float maxReach = 0.9f;
-
-        public float sideMargin = 0.5f;
 
         [Header("Materials")]
         public Material wallMaterial;
         public Material holdMaterial;
-
-        [Header("Colors")]
-        public Color normalColor = new Color(0.85f, 0.85f, 0.87f);
-        public Color startColor = new Color(0.35f, 0.75f, 0.35f);
-        public Color topColor = new Color(0.9f, 0.3f, 0.25f);
 
         [SerializeField] List<Hold> holds = new List<Hold>();
 
@@ -45,50 +36,25 @@ namespace ClimbingBot
             return transform.TransformPoint(new Vector3(wallPosition.x, wallPosition.y, 0f));
         }
 
-        [ContextMenu("Generate")]
-        public void GenerateWithRandomSeed()
+        [ContextMenu("Build Slab")]
+        public void BuildSlab()
         {
-            Generate(Random.Range(int.MinValue, int.MaxValue));
-        }
-
-        public void Generate(int seed)
-        {
-            ClearChildren();
-            BuildSlab();
-
-            // Consecutive holds are one row apart vertically, so bounding the horizontal step at
-            // sqrt(maxReach^2 - rowSpacing^2) bounds the step distance at maxReach by construction.
-            var maxHorizontalStep = Mathf.Sqrt(Mathf.Max(0f, maxReach * maxReach - rowSpacing * rowSpacing));
-            var minX = sideMargin;
-            var maxX = width - sideMargin;
-
-            var rng = new System.Random(seed);
-            var x = Mathf.Lerp(minX, maxX, (float)rng.NextDouble());
-            var rows = Mathf.FloorToInt((height - sideMargin - firstRowHeight) / rowSpacing) + 1;
-
-            for (var i = 0; i < rows; i++)
+            var existing = transform.Find("Slab");
+            if (existing != null)
             {
-                if (i > 0)
-                {
-                    x = Mathf.Clamp(x + (float)(rng.NextDouble() * 2.0 - 1.0) * maxHorizontalStep, minX, maxX);
-                }
-
-                holds.Add(CreateHold(i, new Vector2(x, firstRowHeight + i * rowSpacing)));
+                DestroyImmediate(existing.gameObject);
             }
 
-            holds[0].role = HoldRole.Start;
-            holds[holds.Count - 1].role = HoldRole.Top;
-
-            foreach (var hold in holds)
-            {
-                hold.color = hold.role == HoldRole.Start ? startColor
-                    : hold.role == HoldRole.Top ? topColor
-                    : normalColor;
-                hold.ApplyColor();
-            }
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = "Slab";
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(width * 0.5f, height * 0.5f, thickness * 0.5f);
+            go.transform.localScale = new Vector3(width, height, thickness);
+            go.GetComponent<MeshRenderer>().sharedMaterial = wallMaterial;
         }
 
-        Hold CreateHold(int id, Vector2 wallPosition)
+        /// <summary>Adds a hold at a wall-local position. Caller sets role and color.</summary>
+        public Hold AddHold(int id, Vector2 wallPosition)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Hold_" + id;
@@ -100,28 +66,22 @@ namespace ClimbingBot
             var hold = go.AddComponent<Hold>();
             hold.id = id;
             hold.wallPosition = wallPosition;
+            holds.Add(hold);
             return hold;
         }
 
-        void BuildSlab()
+        [ContextMenu("Clear Holds")]
+        public void ClearHolds()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = "Slab";
-            go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(width * 0.5f, height * 0.5f, thickness * 0.5f);
-            go.transform.localScale = new Vector3(width, height, thickness);
-            go.GetComponent<MeshRenderer>().sharedMaterial = wallMaterial;
-        }
-
-        void ClearChildren()
-        {
-            holds.Clear();
-            // Immediate, not deferred: a regenerated wall must not leave last episode's colliders
-            // standing for the rest of the frame.
-            for (var i = transform.childCount - 1; i >= 0; i--)
+            // Immediate, not deferred: a re-dressed wall must not leave last episode's colliders
+            // standing for the rest of the frame. Sweeps children rather than the list so
+            // hand-placed holds go too.
+            foreach (var hold in GetComponentsInChildren<Hold>(true))
             {
-                DestroyImmediate(transform.GetChild(i).gameObject);
+                DestroyImmediate(hold.gameObject);
             }
+
+            holds.Clear();
         }
     }
 }
