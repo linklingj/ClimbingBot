@@ -137,6 +137,19 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
 측정: 중간 홀드를 한 손으로 잡고 2초간 매달렸을 때 손 드리프트
 0.026 m, 발은 공중 1.93 m. `FixedJoint`가 체중을 버틴다.
 
+## 수동 조작 도구 (테스트 전용)
+
+`ManualClimberControl` (`Assets/01Scripts/Testing/`)
+
+Q/W/A/S로 limb을 고르고 마우스로 조준해 해당 limb을 끌어당긴다. 좌클릭
+grasp, 우클릭 release, R 리셋.
+
+**이건 agent의 action space가 아니고, 그렇게 만들면 안 된다.** limb에
+raw force를 걸어 끌 뿐이라 `ClimbingAgent`가 내보낼 joint target과는
+아무 관계가 없다. `Agent.Heuristic()`에 넣지 않고 별도 MonoBehaviour로
+둔 이유다. Agent가 같은 ragdoll을 몰기 시작하면 이 컴포넌트는 꺼야
+한다. 둘이 서로 싸운다.
+
 ## 클리어 판정
 
 `ClimberRagdoll.IsToppedOut` --- **양손이 모두 `Top` 홀드를 잡고 있을

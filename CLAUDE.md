@@ -12,6 +12,7 @@ ClimbingBotUnity/Assets/
   00Scenes/Train.unity        학습 씬 (벽 + ragdoll + 바닥)
   01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
   01Scripts/Wall/             ClimbingWall, Hold
+  01Scripts/Testing/          수동 조작 도구. agent의 action space가 아니다
   02Ragdoll/                  ragdoll FBX / prefab / 머티리얼
   03Wall/Materials/           벽·홀드 머티리얼
 ```
