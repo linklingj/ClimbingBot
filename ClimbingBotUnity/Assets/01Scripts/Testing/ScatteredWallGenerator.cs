@@ -23,11 +23,11 @@ namespace ClimbingBot.Testing
     public class ScatteredWallGenerator : MonoBehaviour, IWallGenerator
     {
         [Header("Scatter")]
-        [Tooltip("How many holds to aim for. Fewer are placed if the wall runs out of room at this separation -- 50 on a 4x6 wall at 0.45 m still lands every one of them, 60 does not.")]
-        public int holdCount = 50;
+        [Tooltip("How many holds to aim for. Fewer are placed if the wall runs out of room at this separation.")]
+        public int holdCount = 70;
 
-        [Tooltip("No two holds end up closer than this (m). Keeps grasp targets unambiguous -- graspRadius is 0.2, so anything below ~0.4 lets one reach snap to either of two holds.")]
-        public float minSeparation = 0.45f;
+        [Tooltip("No two holds end up closer than this (m). Sets how many holds fall inside a limb's reach, which is what decides whether a reachable target exists at all.")]
+        public float minSeparation = 0.38f;
 
         [Tooltip("Keeps holds off the wall edges (m).")]
         public float margin = 0.3f;
@@ -57,14 +57,37 @@ namespace ClimbingBot.Testing
 #endif
         public void Generate(int seed)
         {
+            Generate(seed, null);
+        }
+
+        /// <summary>
+        /// Scatters as usual, but places <paramref name="anchors"/> first and unconditionally.
+        /// Stage 1 uses this to put holds exactly under a fixed start stance -- the stance decides
+        /// where they go, so they are exempt from minSeparation against each other (feet sit closer
+        /// together than any scattered pair would). Scattered holds still keep their distance from
+        /// them, so an anchor is never ambiguous with its neighbours.
+        /// </summary>
+        public void Generate(int seed, IReadOnlyList<Vector2> anchors)
+        {
             var wall = Wall;
             wall.ClearHolds();
 
             var rng = new System.Random(seed);
             var placed = new List<Vector2>();
 
+            var anchorCount = 0;
+            if (anchors != null)
+            {
+                foreach (var anchor in anchors)
+                {
+                    placed.Add(anchor);
+                }
+
+                anchorCount = placed.Count;
+            }
+
             var attempts = holdCount * k_AttemptsPerHold;
-            for (var i = 0; i < attempts && placed.Count < holdCount; i++)
+            for (var i = 0; i < attempts && placed.Count < holdCount + anchorCount; i++)
             {
                 var candidate = new Vector2(
                     Mathf.Lerp(margin, wall.width - margin, (float)rng.NextDouble()),
@@ -79,7 +102,8 @@ namespace ClimbingBot.Testing
             }
 
             // Bottom-up ids, so a hold's number says roughly how high it is and the hierarchy reads
-            // in the same order as the wall.
+            // in the same order as the wall. Anchors sort in with the rest -- the caller finds them
+            // by position, not by id, so they need no special place in the ordering.
             placed.Sort((a, b) => a.y.CompareTo(b.y));
 
             for (var i = 0; i < placed.Count; i++)

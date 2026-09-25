@@ -11,14 +11,18 @@ ML-Agents 4.1.0, AR Foundation이 들어 있다. `src/`는 아직 비어 있다.
 ClimbingBotUnity/Assets/
   00Scenes/Train.unity        학습 씬 (벽 + ragdoll + 바닥)
   01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
-  01Scripts/Wall/             ClimbingWall, Hold
-  01Scripts/Testing/          수동 조작 도구, 랜덤 벽 생성기. 둘 다 버릴 코드다
+  01Scripts/Wall/             ClimbingWall, Hold, IWallGenerator
+  01Scripts/Testing/          수동 조작 도구, 벽 생성기 둘. 전부 버릴 코드다
+  01Scripts/Training/         Stage1Environment (에피소드 구성)
   02Ragdoll/                  ragdoll FBX / prefab / 머티리얼
-  03Wall/Materials/           벽·홀드 머티리얼
+  03Prefabs/                  Hold 프리팹
+  04Materials/                벽·홀드 머티리얼
 ```
 
-끝난 것: ragdoll, grasp/release, 벽과 홀드, 랜덤 벽 생성기, 클리어 판정.
-다음: `ClimbingAgent` (observation / action / reward).
+끝난 것: ragdoll, grasp/release, 벽과 홀드, 벽 생성기 둘(spline 루트 /
+산포), 클리어 판정, Stage 1 에피소드 구성.
+다음: `ClimbingAgent` (observation / action / reward). 관측과 행동 설계는
+`docs/05`에 확정해 뒀다.
 
 빌드/테스트/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서
 `Physics.Simulate`를 돌려서 한다. Python 학습 코드가 추가되면 이 섹션을 실제
