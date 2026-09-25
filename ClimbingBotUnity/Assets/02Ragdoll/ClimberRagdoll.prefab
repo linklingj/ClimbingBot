@@ -2911,7 +2911,7 @@ MonoBehaviour:
   m_Model: {fileID: 5022602860645237092, guid: 5fb07379fa20b43bbab71847a399a54b, type: 3}
   m_InferenceDevice: 2
   m_BehaviorType: 0
-  m_BehaviorName: ClimbingStage1
+  m_BehaviorName: Climber
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1

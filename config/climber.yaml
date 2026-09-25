@@ -4,7 +4,7 @@
 # same action shape, so its settings are the closest known-good starting point. Differences are
 # noted below and are all consequences of the task being shorter than walking.
 behaviors:
-  ClimbingStage1:
+  Climber:
     trainer_type: ppo
     hyperparameters:
       batch_size: 2048
