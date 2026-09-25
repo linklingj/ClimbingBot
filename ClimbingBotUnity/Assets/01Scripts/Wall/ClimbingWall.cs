@@ -18,11 +18,11 @@ namespace ClimbingBot
         public float thickness = 0.3f;
 
         [Header("Holds")]
+        public GameObject holdPrefab;
         public float holdRadius = 0.07f;
 
         [Header("Materials")]
         public Material wallMaterial;
-        public Material holdMaterial;
 
         [SerializeField] List<Hold> holds = new List<Hold>();
 
@@ -56,14 +56,11 @@ namespace ClimbingBot
         /// <summary>Adds a hold at a wall-local position. Caller sets role and color.</summary>
         public Hold AddHold(int id, Vector2 wallPosition)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            var go = Instantiate(holdPrefab, transform);
             go.name = "Hold_" + id;
-            go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(wallPosition.x, wallPosition.y, -holdRadius);
-            go.transform.localScale = Vector3.one * (holdRadius * 2f);
-            go.GetComponent<MeshRenderer>().sharedMaterial = holdMaterial;
 
-            var hold = go.AddComponent<Hold>();
+            var hold = go.GetComponent<Hold>();
             hold.id = id;
             hold.wallPosition = wallPosition;
             holds.Add(hold);
@@ -78,6 +75,14 @@ namespace ClimbingBot
             // hand-placed holds go too.
             foreach (var hold in GetComponentsInChildren<Hold>(true))
             {
+#if UNITY_EDITOR
+                // Selecting a hold and then regenerating leaves the Inspector holding a destroyed
+                // object, which throws on every domain reload until the selection is replaced.
+                if (UnityEditor.Selection.activeGameObject == hold.gameObject)
+                {
+                    UnityEditor.Selection.activeGameObject = gameObject;
+                }
+#endif
                 DestroyImmediate(hold.gameObject);
             }
 
