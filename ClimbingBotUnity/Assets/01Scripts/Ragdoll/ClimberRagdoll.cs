@@ -40,7 +40,17 @@ namespace ClimbingBot
         [Tooltip("Max limb-to-hold distance at which a grasp is allowed (m). Tune against hold size.")]
         public float graspRadius = 0.2f;
 
+        [Header("Grip load")]
+        [Tooltip("Load one hand can hold, in bodyweights. Calibration knob: a strong climber one-arm hangs at 1.")]
+        public float handCapacity = 1f;
+
+        [Tooltip("Load one foot can hold, in bodyweights.")]
+        public float footCapacity = 2f;
+
         public JointDriveController JdController { get; private set; }
+
+        /// <summary>Weight of the whole ragdoll in newtons. Normalizer for grip load.</summary>
+        public float BodyWeight { get; private set; }
 
         struct Grip
         {
@@ -58,6 +68,14 @@ namespace ClimbingBot
             {
                 JdController.SetupBodyPart(t);
             }
+
+            var mass = 0f;
+            foreach (var bp in JdController.bodyPartsList)
+            {
+                mass += bp.rb.mass;
+            }
+
+            BodyWeight = mass * Physics.gravity.magnitude;
         }
 
         public IEnumerable<Transform> BodyParts()
@@ -99,6 +117,60 @@ namespace ClimbingBot
         public Hold GraspedHold(Limb limb)
         {
             return m_Grips.TryGetValue(limb, out var grip) ? grip.hold : null;
+        }
+
+        public static IReadOnlyList<Limb> Limbs => k_Limbs;
+
+        /// <summary>
+        /// Force this grip has to carry, in bodyweights. 0 when the limb is free.
+        ///
+        /// This is what a real hand would have to hold, and it is where every posture failure shows
+        /// up at once -- hanging off the wall, feet cut loose, barn-dooring, one-arming. The grasp
+        /// joint is an unbreakable position lock, so nothing here can make the climber fall. That is
+        /// deliberate: this is a diagnostic, not a hand-strength model.
+        ///
+        /// Measured at the limb's own joint (wrist, ankle), not at the grasp joint. Both carry the
+        /// same load in series, but only this one reads true: hanging by one hand gives 1.07 here
+        /// against the grasp joint's 7.8. The grasp joint anchors to the world a few cm from the
+        /// wrist anchor, which appears to inflate what the solver reports.
+        /// </summary>
+        public float GripLoad(Limb limb)
+        {
+            // bodyPartsDict is filled in Awake, before any grasp joint exists, so this is always the
+            // ragdoll's own joint -- GetComponent on a grasping hand would be a coin flip.
+            return IsGrasping(limb)
+                ? JdController.bodyPartsDict[LimbTransform(limb)].joint.currentForce.magnitude / BodyWeight
+                : 0f;
+        }
+
+        public float Capacity(Limb limb)
+        {
+            return limb == Limb.LeftFoot || limb == Limb.RightFoot ? footCapacity : handCapacity;
+        }
+
+        /// <summary>
+        /// 1 = every grip has slack, 0 = one grip is at its capacity, and 0 while nothing is grasped.
+        /// The worst grip decides it; an average would hide one hand carrying the whole body.
+        /// </summary>
+        public float StabilityScore
+        {
+            get
+            {
+                var worst = 0f;
+                var grasping = false;
+                foreach (var limb in k_Limbs)
+                {
+                    if (!IsGrasping(limb))
+                    {
+                        continue;
+                    }
+
+                    grasping = true;
+                    worst = Mathf.Max(worst, GripLoad(limb) / Mathf.Max(1e-4f, Capacity(limb)));
+                }
+
+                return grasping ? Mathf.Clamp01(1f - worst) : 0f;
+            }
         }
 
         /// <summary>Route is cleared when both hands are on the top hold.</summary>
