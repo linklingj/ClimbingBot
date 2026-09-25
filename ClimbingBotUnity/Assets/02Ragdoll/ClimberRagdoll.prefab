@@ -2861,6 +2861,8 @@ GameObject:
   - component: {fileID: 3599283675615088294}
   - component: {fileID: 3599283675615088288}
   - component: {fileID: 6808351167860980605}
+  - component: {fileID: 1230126438722169484}
+  - component: {fileID: 8476080896166669182}
   m_Layer: 0
   m_Name: ClimberRagdoll
   m_TagString: Untagged
@@ -2897,19 +2899,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 243
+    VectorObservationSize: 256
     NumStackedVectorObservations: 1
     m_ActionSpec:
-      m_NumContinuousActions: 39
-      BranchSizes: 
-    VectorActionSize: 27000000
+      m_NumContinuousActions: 41
+      BranchSizes: 03000000030000000300000003000000
+    VectorActionSize: 
     VectorActionDescriptions: []
     VectorActionSpaceType: 1
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 5022602860645237092, guid: 5fb07379fa20b43bbab71847a399a54b, type: 3}
   m_InferenceDevice: 2
   m_BehaviorType: 0
-  m_BehaviorName: Climber
+  m_BehaviorName: ClimbingStage1
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
@@ -2960,6 +2962,49 @@ MonoBehaviour:
   shinR: {fileID: 1141629522868234935}
   footR: {fileID: 7717884938372330209}
   graspRadius: 0.2
+  handCapacity: 1
+  footCapacity: 2
+--- !u!114 &1230126438722169484
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4409675767907316506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8f1d16a4ea9e4f0f8021da894bbbb59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ClimbingBot.Training.ClimbingAgent
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 1000
+  env: {fileID: 0}
+  episodeSeed: 0
+  maxDrop: 1
+  progressReward: 2
+  successReward: 1
+  fallPenalty: -1
+  timePenalty: 0.0005
+  supportPenalty: 0.01
+  energyPenalty: 0
+  lockSupportLimbs: 1
+--- !u!114 &8476080896166669182
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4409675767907316506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a5c9d521e5ef4759a8246a07d52221e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.DecisionRequester
+  DecisionPeriod: 5
+  DecisionStep: 0
+  TakeActionsBetweenDecisions: 1
 --- !u!1 &4677568880406971097
 GameObject:
   m_ObjectHideFlags: 0

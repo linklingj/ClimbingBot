@@ -117,7 +117,26 @@ Walker에서 바꾼 것은 굵게 표시한 셋이다.
 아래 "주변 홀드를 넣지 않는 이유"를 먼저 읽을 것 --- 이 절의 나머지가
 전부 거기서 따라 나온다.
 
-기준 프레임은 hips다. 월드 좌표는 넣지 않는다.
+**기준 프레임은 벽이다.** 월드 좌표는 넣지 않는다. Walker는 ragdoll이
+요동쳐 학습이 흔들리는 걸 막으려고 `OrientationCube`라는 안정화 프레임을
+따로 두는데, 클라이머는 언제나 고정된 벽 하나를 마주 보므로 **벽 자체가
+이미 그 안정화 프레임**이다. 대역 오브젝트가 필요 없고, 그래서
+`OrientationCube`를 지운 게 결과적으로 맞았다.
+
+구현 크기 **256**. `ClimbingAgent`가 쓰는 순서 그대로:
+
+| 블록 | 차원 |
+|---|---|
+| hips 회전(벽 기준), chest 회전(벽 기준), 평균 속도 | 4 + 4 + 3 |
+| limb 4개 `isGrasping` | 4 |
+| limb 4개 (목표 상대 위치 3 + 지시 플래그 1) | 16 |
+| body part 16개 × (접지 1 + 속도 3 + 각속도 3 + hips 상대 위치 3) | 160 |
+| 자세를 보고하는 관절 13개 × (localRotation 4 + 강도 1) | 65 |
+
+16개 중 13개만 자세를 보고한다. hips는 관절이 없고, 손목 둘은 **전 축
+Locked**라 localRotation이 상수다. 상수 입력은 `normalize: true`에서
+분산이 0이라 쓸모가 없다. Walker는 손을 이름으로 빼는데, 여기서는 관절이
+용접인지 검사해서 뺀다 --- 어느 부위가 용접인지 하드코딩하지 않는다.
 
 ### Body (proprioception)
 
@@ -187,8 +206,26 @@ Stage 1은 한 슬롯만 현재 위치와 다르고 나머지는 "유지"다. �
 
 `BodyPart.SetJointTargetRotation`에 축별 목표를 정규화된 [-1, 1]로 넘긴다.
 축 개수는 관절마다 다르다 --- Locked 축은 limit이 0이라 값을 줘도 0이
-곱해져 사라지므로, 열린 축에만 값을 준다. 고관절은 축회전을 열었으므로
-x·y·z 3개다(위 "관절 가동범위" 참고).
+곱해져 사라지므로, 열린 축에만 값을 준다.
+
+구현: 회전 **28** + 관절 강도 **13** = **연속 41개**.
+
+| 관절 | 회전 축 수 |
+|---|---|
+| spine, chest | 3, 3 |
+| head | 2 (angZ Locked) |
+| 어깨 L·R | 2씩 (상완 축회전 Locked) |
+| 팔꿈치 L·R | 1씩 |
+| 고관절 L·R | 3씩 --- 축회전을 열었다 |
+| 무릎 L·R | 1씩 |
+| 발목 L·R | 3씩 |
+
+**팔꿈치 angZ(전완 회내외)는 열려 있지만 일부러 구동하지 않는다.** 실측상
+효과가 없는데(위 "관절 가동범위") action 1개를 먹는다. 목표를 0으로 주므로
+드라이브가 중립에서 잡아 준다 --- 자유롭게 흔들리는 게 아니다.
+
+손목은 전 축 Locked이라 회전도 강도도 주지 않는다. 강도 13개는 실제로
+구동하는 관절 수와 같다.
 
 ### 2. Discrete Grasp Actions
 
@@ -208,7 +245,14 @@ x·y·z 3개다(위 "관절 가동범위" 참고).
 "충분히 안정됐을 때 놓는다"가 클라이밍 스킬의 핵심이라, 그걸 정책에서
 빼면 배우는 게 모터 제어뿐이 된다.
 
-필요에 따라 MultiDiscrete branch로 구성한다.
+구현: **branch 4개 × 크기 3**.
+
+`WriteDiscreteActionMask`가 두 조건을 건다 --- grasp는 `CanGrasp`(그 limb에
+지정된 홀드까지 `graspRadius` 이내)일 때만, release는 지금 잡고 있을 때만.
+
+**Stage 1은 나머지 세 limb의 branch를 통째로 "no change"로 막는다.**
+`docs/05`의 Stage 1 정의가 "다른 limb 고정하고 하나만 이동"이기 때문이다.
+`ClimbingAgent.lockSupportLimbs`로 끄면 Stage 2 동작이 된다.
 
 ## Grasp 모델
 
@@ -496,23 +540,78 @@ slerpDrive 평형과 같은 값이다.
 
 ## Reward 설계
 
-예시:
+`ClimbingAgent`가 **물리 스텝마다** 채점한다. 결정마다가 아니라 스텝마다인
+이유는 shaping이 동작을 따라가야 하기 때문이고, Walker도 같은 자리에서
+채점한다.
 
-\[ R = w_p R\_{pose} +w_g R\_{grasp} +w_s R\_{stability} -w_e
-P\_{energy} -w_f P\_{fall} \]
+| 항목 | 기본값 | 언제 |
+|---|---|---|
+| 진행 | `+2.0 × (이전 거리 − 현재 거리)` | 매 스텝 |
+| 성공 | `+1.0` | 지정 limb이 목표 홀드를 grasp → 종료 |
+| 추락 | `−1.0` | hips가 시작 높이에서 `maxDrop`(1 m) 아래로 → 종료 |
+| 시간 | `−0.0005` | 매 스텝 |
+| 지지 상실 | `−0.01` | 매 스텝, 잡고 있지 않은 support limb마다 |
+| 에너지 | `0` (꺼 둠) | 매 결정, 연속 action 제곱합 |
 
-후보: - target limb와 hold 거리 감소 - target grasp 성공 - 전체 target
-pose 완성 - torso 안정성 - 추락 penalty - 불필요한 joint velocity/torque
-penalty - 시간 penalty
+**진행 보상은 potential-based다.** 거리의 차분이므로 합이 시작 거리로
+묶인다. 앞뒤로 흔들어서 보상을 벌 수 없다.
 
-초기에는 dense reward로 학습시키고 점차 최종 pose 성공 비중을 높인다.
+**에너지 패널티는 기본 0이다.** 학습 초기에 넣으면 동작을 찾는 탐색 자체를
+눌러버린다. 배운 동작이 경련하듯 보이면 그때 올린다.
+
+지지 상실 패널티는 `lockSupportLimbs`가 켜진 Stage 1에서는 사실상 작동하지
+않는다. support limb의 release가 마스크로 막혀 있기 때문이다. Stage 2에서
+마스크를 풀면 그때부터 의미를 갖는다.
+
+`GripLoad` / `StabilityScore`는 **보상에 넣지 않았다.** 아직 진단용이다
+(위 "그립 하중").
+
+## 학습 실행
+
+``` bash
+pip install mlagents                        # 아직 설치되어 있지 않다
+mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
+# 콘솔에 "Start training by pressing the Play button" 가 뜨면 에디터에서 Play
+```
+
+`config/climbing_stage1.yaml`은 ml-agents의 `ppo/Walker.yaml`에서 출발했다
+--- 같은 ragdoll, 같은 `JointDriveController`, 비슷한 action 모양이라 가장
+가까운 known-good 출발점이다. 바꾼 것은 둘뿐이다. `gamma` 0.995 → 0.99(한
+번의 limb 이동은 1\~2초라 200결정을 거슬러 크레딧할 이유가 없다),
+`max_steps` 30M → 5M(에피소드가 성공으로 끝나고 과제가 한 동작이다).
+
+**`Run In Background`가 켜져 있어야 한다.** 학습은 에디터가 포커스를 잃은
+채로 돌아가는데, 꺼져 있으면 플레이 루프가 통째로 멈춘다(academy step이
+1에서 늘지 않는 증상).
+
+## ClimbingAgent 구성
+
+| | |
+|---|---|
+| Behavior name | `ClimbingStage1` |
+| Vector observation | 256, stack 1 |
+| Continuous actions | 41 |
+| Discrete branches | 3, 3, 3, 3 |
+| `DecisionRequester` | period 5 (0.1 s마다 결정) |
+| `Agent.MaxStep` | 1000 결정 |
+
+`Heuristic()`은 **무동작**이다 --- 모든 관절을 가동범위 중앙에 두고 grasp를
+바꾸지 않는다. 학습기도 모델도 없이 씬을 돌릴 때 placeholder action으로
+끌려다니지 않게 하기 위한 것이고, 손으로 쓴 컨트롤러가 아니며 그렇게 키워서도
+안 된다. 수동 조작은 `ManualClimberControl`에 따로 있다.
 
 ## Episode 종료
 
-성공: - 모든 required limb가 target hold를 grasp - 일정 시간 안정적으로
-pose 유지
+Stage 1 구현:
 
-실패: - 추락 - 제한 시간 초과 - 비정상 자세/환경 이탈
+-   **성공** --- 지정 limb이 목표 홀드를 grasp. `+1.0`, 즉시 종료.
+-   **추락** --- hips가 시작 높이에서 `maxDrop`(1 m) 아래. `−1.0`, 즉시 종료.
+    태그나 접지 판정이 아니라 낙차 하나로 본다. 숫자 하나라 튜닝이 쉽고
+    "매달린 채 늘어짐"과 "떨어짐"을 가른다.
+-   **시간 초과** --- `Agent.MaxStep` 1000 결정(=100초). 보너스도 패널티도
+    없다.
+
+Stage 2 이후로 미룬 것: 일정 시간 pose 유지 요구, 비정상 자세 판정.
 
 ## 평가
 

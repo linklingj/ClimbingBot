@@ -108,3 +108,5 @@ InitTestScene*.unity*
 # Odin Inspector (paid asset store plugin, not committed)
 /[Aa]ssets/Plugins/Sirenix*
 
+# ML-Agents writes profiling timers into the project when the academy runs
+/[Aa]ssets/ML-Agents/Timers*

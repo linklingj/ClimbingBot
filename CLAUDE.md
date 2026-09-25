@@ -13,20 +13,29 @@ ClimbingBotUnity/Assets/
   01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
   01Scripts/Wall/             ClimbingWall, Hold, IWallGenerator
   01Scripts/Testing/          수동 조작 도구, 벽 생성기 둘. 전부 버릴 코드다
-  01Scripts/Training/         Stage1Environment (에피소드 구성)
+  01Scripts/Training/         ClimbingAgent, Stage1Environment
   02Ragdoll/                  ragdoll FBX / prefab / 머티리얼
   03Prefabs/                  Hold 프리팹
   04Materials/                벽·홀드 머티리얼
 ```
 
 끝난 것: ragdoll, grasp/release, 벽과 홀드, 벽 생성기 둘(spline 루트 /
-산포), 클리어 판정, Stage 1 에피소드 구성.
-다음: `ClimbingAgent` (observation / action / reward). 관측과 행동 설계는
-`docs/05`에 확정해 뒀다.
+산포), 클리어 판정, Stage 1 에피소드 구성, `ClimbingAgent`.
+다음: Stage 1 학습을 실제로 돌려 보상/자세를 조정.
 
-빌드/테스트/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서
-`Physics.Simulate`를 돌려서 한다. Python 학습 코드가 추가되면 이 섹션을 실제
-명령으로 갱신할 것.
+**학습 실행**
+
+```
+pip install mlagents                        # 아직 설치되어 있지 않다
+mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
+```
+
+프롬프트가 뜨면 에디터에서 Play. `Run In Background`가 꺼져 있으면 에디터가
+포커스를 잃는 순간 플레이 루프가 멈춘다.
+
+빌드/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서 돌린다 ---
+`Physics.Simulate`는 `FixedUpdate`를 호출하지 않으므로 **아카데미 루프를
+검증할 때는 실제 시간을 흐르게 둘 것.**
 
 **물리 설정 주의.** ragdoll은 Unity 기본 솔버 설정으로는 무너진다.
 `Physics.defaultSolverIterations`/`defaultSolverVelocityIterations`를 12/12로
