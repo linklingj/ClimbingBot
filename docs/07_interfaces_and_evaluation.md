@@ -50,6 +50,30 @@ Frame
 홀드 ID는 한 scene 안에서 유일해야 한다. VLM, RL, AR 모두 동일 ID를
 사용한다.
 
+## Target pose 표현
+
+VLM planner가 RL controller에 넘기는 pose는 **limb endpoint 4개**다.
+
+``` json
+{
+  "targets": [
+    { "limb": "LeftHand",  "hold_id": 7, "move": true  },
+    { "limb": "RightHand", "hold_id": 3, "move": false },
+    { "limb": "LeftFoot",  "hold_id": 1, "move": false },
+    { "limb": "RightFoot", "hold_id": 2, "move": false }
+  ]
+}
+```
+
+-   네 limb을 항상 모두 명시한다. `move: false`는 "지금 잡은 것을
+    유지"다. 실제로는 한 번에 하나만 옮기는 경우가 대부분이지만 슬롯은
+    고정 4개다 --- RL 관측 shape을 커리큘럼 내내 바꾸지 않기 위해서다
+    (`docs/05`의 Observation).
+-   16개 body part의 **전체 pose가 아니다.** 척추 각도까지 VLM이 정하게
+    하는 것은 비현실적이고, 나머지 자세는 RL이 찾는다.
+-   RL은 `hold_id`를 3D 점으로 바꿔 쓸 뿐이다. RL 관측에는 홀드 목록도
+    ID도 들어가지 않는다. 어느 홀드로 갈지는 전적으로 planner의 결정이다.
+
 ## Phase 1 구현과의 차이
 
 Unity 쪽 `Hold`는 start/top을 **홀드 자신의 `role`**

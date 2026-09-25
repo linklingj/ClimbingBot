@@ -113,31 +113,71 @@ Walker에서 바꾼 것은 굵게 표시한 셋이다.
 
 ## Observation
 
-예시:
+**고정 크기다.** 홀드 개수는 벽마다 다르지만 관측 차원은 변하지 않는다.
+아래 "주변 홀드를 넣지 않는 이유"를 먼저 읽을 것 --- 이 절의 나머지가
+전부 거기서 따라 나온다.
 
-### Body
+기준 프레임은 hips다. 월드 좌표는 넣지 않는다.
 
--   각 body part position/rotation
--   joint rotation
--   angular velocity
--   linear velocity
--   root orientation
+### Body (proprioception)
+
+ML-Agents `Walker`의 body observation을 그대로 쓴다.
+
+-   body part별 hips 기준 상대 위치 / 회전
+-   linear / angular velocity
+-   hips orientation
 
 ### Contact
 
--   각 limb가 현재 grasp 중인지
--   grasp 중인 hold ID 또는 target-relative feature
+limb 4개(`Limb` enum 순서) 각각:
+
+-   `isGrasping` (1)
+
+잡고 있는 홀드의 위치는 **따로 넣지 않는다.** grasp는 limb을 그 자리에
+고정하므로 홀드 위치가 곧 limb 위치이고, 그건 이미 body 관측에 있다.
 
 ### Target
 
--   각 limb의 target hold 상대 위치
--   target pose와 현재 pose 차이
+limb 4개 각각:
+
+-   목표 지점의 상대 위치 (3) --- 해당 limb 기준
+-   이번 pose에서 **옮기라고 지시된 limb인지** (1)
+
+4 × 4 = 16차원. 움직이지 않는 limb의 목표는 현재 위치이므로 상대 위치가
+0에 가깝고 지시 플래그가 0이다.
+
+목표는 **limb endpoint 4개뿐**이고 16개 body part의 전체 pose가 아니다.
+전체 pose를 주면 reward 설계는 쉬워지지만 VLM이 그걸 뱉기가 너무 어렵다.
+사람도 "왼손을 저 크림프로"라고 생각하지 척추 각도로 생각하지 않는다.
+나머지 자세는 RL이 찾는다.
 
 ### Stability
 
--   center/root velocity
--   torso orientation
--   필요 시 support/contact 정보
+-   center of mass velocity
+-   chest orientation (벽 기준)
+
+### 주변 홀드를 넣지 않는 이유
+
+이 모듈이 배우는 것은 "끝까지 올라가라"가 아니라 **"이 limb을 저 지점으로
+옮겨라"**다. 어느 홀드로 갈지는 VLM planner가 정한다(`docs/07`의
+`PlannerAction / PoseSequence`). 따라서:
+
+-   목표는 "홀드"가 아니라 **3D 점**이다. 에이전트는 그게 홀드인지 알
+    필요가 없다. 홀드 개수가 벽마다 달라 관측 크기가 가변이 되는 문제가
+    **애초에 생기지 않는다** --- 목표 개수는 limb 개수로 고정이다.
+-   절대 wall-local 좌표를 넣으면 "높이 3.2 m에서 본 배치"를 통째로
+    외운다. limb 기준 상대 좌표는 평행이동 불변이라 같은 국소 상황이 같은
+    관측이 되고, 그게 랜덤 벽 일반화의 전부다.
+-   주변 홀드가 실제로 필요한 곳은 grasp action **masking** 하나뿐인데
+    그건 `CanGrasp`가 코드에서 계산한다. 정책이 볼 관측이 아니다.
+
+단일 limb 이동인데 target 슬롯을 4개 두는 이유는 커리큘럼 때문이다.
+Stage 1은 한 슬롯만 현재 위치와 다르고 나머지는 "유지"다. 슬롯을 1개로
+줄이면 Stage 3에서 관측 shape이 바뀌어 앞 스테이지 가중치를 못 이어쓴다.
+
+기각한 대안: 홀드 ID 임베딩(벽마다 ID 의미가 달라 일반화가 안 된다),
+벽 전체를 2D 그리드로 넣기(CNN이 필요하고 Phase 1에는 과하다. 홀드가
+수십 개로 늘고 경로 선택 자체가 어려워지면 그때 다시 본다).
 
 ## Action Space
 
@@ -145,8 +185,10 @@ Walker에서 바꾼 것은 굵게 표시한 셋이다.
 
 ### 1. Joint Control
 
-ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
-결정한다.
+`BodyPart.SetJointTargetRotation`에 축별 목표를 정규화된 [-1, 1]로 넘긴다.
+축 개수는 관절마다 다르다 --- Locked 축은 limit이 0이라 값을 줘도 0이
+곱해져 사라지므로, 열린 축에만 값을 준다. 고관절은 축회전을 열었으므로
+x·y·z 3개다(위 "관절 가동범위" 참고).
 
 ### 2. Discrete Grasp Actions
 
@@ -157,6 +199,14 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
 1 = grasp
 2 = release
 ```
+
+**어느 홀드를 잡을지는 action이 고르지 않는다.** 해당 limb에 지정된 target
+홀드를 잡는다. 홀드 선택은 planner의 일이고, 이 모듈은 "지금 잡을지"만
+정한다 --- 그래서 관측에 홀드 목록이 없어도 이 action이 성립한다.
+
+언제 놓고 언제 잡을지는 스크립트로 박지 않고 **학습 대상으로 둔다.**
+"충분히 안정됐을 때 놓는다"가 클라이밍 스킬의 핵심이라, 그걸 정책에서
+빼면 배우는 게 모터 제어뿐이 된다.
 
 필요에 따라 MultiDiscrete branch로 구성한다.
 
@@ -238,8 +288,11 @@ distance(limb, target_hold) < grasp_threshold
 
 즉 에이전트가 멀리 있는 홀드를 순간적으로 잡는 것을 막는다.
 
-추가 조건 후보: - 해당 limb가 이미 grasp 중이면 다른 grasp 금지 - target
-hold가 현재 target pose에 포함될 때만 허용 - release 가능한 상태 제한
+여기서 `target_hold`는 그 limb에 지정된 홀드다. 가까이 있는 아무 홀드가
+아니다 --- "Discrete Grasp Actions" 참고.
+
+추가 조건 후보: - 해당 limb가 이미 grasp 중이면 다른 grasp 금지 -
+release 가능한 상태 제한
 
 `ClimberRagdoll.CanGrasp`가 거리 조건(`graspRadius`, 기본 0.2 m)과 "이미
 grasp 중이면 금지"까지 구현한다. 나머지 조건은 controller 쪽에서
