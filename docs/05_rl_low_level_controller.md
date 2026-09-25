@@ -223,26 +223,43 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 않고 `ClimbingWall`의 공개 API만 쓰는 별도 컴포넌트로 뺐다. 지울 때
 `ClimbingWall`은 건드리지 않는다.
 
-`Generate(seed)`가 한 줄기 루트를 만든다. 아래에서 위로
-`rowSpacing`(0.55 m)마다 홀드를 하나씩 놓고, 가로 위치만 랜덤하게
-움직인다.
+`Generate(seed)`는 루트를 spline으로 그린다.
 
-**클리어 가능성은 rejection sampling이 아니라 구조적으로 보장한다.**
-연속한 두 홀드는 항상 세로로 `rowSpacing`만큼 떨어져 있으므로, 가로
-이동을 `sqrt(maxReach² - rowSpacing²)`로 제한하면 두 홀드 사이 거리가
-`maxReach`(0.9 m)를 넘을 수 없다. 벽 좌우 경계로 clamp하는 것은 가로
-이동을 줄이기만 하므로 이 보장을 깨지 않는다.
+1.  top 홀드의 x를 랜덤으로 뽑는다. 높이만 `topHoldY`로 고정이다.
+2.  knot 2\~4개짜리 spline을 만든다. 아래 끝은 `splineBottomY`(0.5 m),
+    위 끝은 **항상 top 홀드**다. 나머지 knot의 x는 랜덤이다.
+3.  start 홀드의 x는 spline이 `startHoldY`를 지나는 지점에서 읽는다.
+    즉 start 홀드는 루트 옆이 아니라 **곡선 위에** 있다.
+4.  `SplineInstantiate`가 그 위에 홀드 프리팹을 배치한다. 간격은
+    `minHoldSpacing`\~`maxHoldSpacing`에서 홀드마다 뽑고, x 방향 랜덤
+    오프셋을 더해 사다리처럼 보이지 않게 한다.
+5.  배치 결과를 위치만 읽어 벽의 진짜 홀드로 굽고, start/top을 넣은 뒤
+    아래에서 위로 id를 매긴다.
 
-`maxReach` 0.9 m는 ragdoll 기준값이다 --- 키 1.97 m, 팔 스팬 1.95 m,
+start/top은 **높이만 고정**이다. x는 벽마다 달라진다.
+
+**start 홀드는 가장 아래 홀드가 아니다.** spline이 `startHoldY` 밑까지
+내려오므로 그 아래에도 홀드가 생긴다.
+
+`SplineInstantiate`의 인스턴스는 `HideAndDontSave`이고 컴포넌트가
+수명을 관리한다. 씬에 저장되지도, 우리가 붙인 id/role/color를 유지하지도
+못한다. 그래서 위치만 받아 쓰고 인스턴스는 버린다. 벽은 직렬화되는 진짜
+홀드를 갖는다.
+
+또 `SplineInstantiate`는 position offset의 min/max만 공개하고 축별
+randomize 토글은 비공개다. 켜지 않으면 오프셋이 min 값으로 **고정**되고
+`Seed`도 무시된다. 리플렉션으로 `m_PositionOffset.randomX`를 켠다
+(com.unity.splines 2.8.4 기준). 버릴 코드라 감수한다.
+
+**간격 보장.** spline 간격과 지터만으로는 `maxHoldSpacing + 2 × jitter ≤
+maxReach`가 성립한다(지터를 그 부등식에 맞춰 clamp한다). 하지만
+start/top은 지정된 높이에 놓이므로 대체된 spline 홀드보다 이웃과 멀어질
+수 있다. 남은 간격은 중점에 홀드를 끼워 반으로 접는다. 이 패스 뒤에는
+모든 연속 간격이 `maxReach` 이하다.
+
+`maxReach` 1.4 m는 ragdoll 기준값이다 --- 키 1.97 m, 팔 스팬 1.95 m,
 hips에서 손까지 1.09 m.
 
-첫 홀드는 `Start`, 마지막 홀드는 `Top`이 된다.
-
-시드 200개로 검증했다: 벽마다 홀드 9개, 최대 연속 간격 0.899 m
-(`maxReach` 0.9 m), 경계 이탈 0건, role 오류 0건.
-
-밀도, 한 행에 여러 홀드, 좌우 분포 편향 등은 아직 없다. 학습이 이
-난이도를 넘어선 뒤에 붙인다.
 
 ## Reward 설계
 
