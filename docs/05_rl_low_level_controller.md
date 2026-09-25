@@ -304,10 +304,13 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 
 -   균형 유지 및 관절 제어 안정화
 -   다른 limb 고정하고 하나의 limb만 랜덤 target으로 이동
+-   벽은 `ScatteredWallGenerator`. 정해진 자세에서 시작해 limb 하나와
+    목표 홀드 하나를 받는다. 루트가 없으므로 종료 조건은 탑아웃이 아니라
+    목표 홀드 grasp다.
 
 ### Stage 2 --- Random Wall Climbing
 
--   랜덤 hold generator
+-   벽은 `RandomWallGenerator` (spline 루트)
 -   위쪽 target pose 연속 제공
 -   pose-to-pose transition 학습
 
@@ -339,14 +342,56 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 -   `role` --- `Normal` / `Start` / `Top`.
 -   `wallPosition` --- wall-local 2D 좌표.
 
-## Random Wall Generator (테스트 전용)
+## Wall Generator (테스트 전용)
+
+생성기는 **두 개**고 학습 단계에 따라 고른다. 둘 다 `IWallGenerator`
+(`Assets/01Scripts/Wall/IWallGenerator.cs`)를 구현하고 벽 GameObject에
+같이 붙여 둔다. **활성화된 쪽이 선택된 것**이다 --- mode enum을 따로 두지
+않는다.
+
+| 생성기 | 벽 모양 | 쓰는 곳 |
+|---|---|---|
+| `ScatteredWallGenerator` | 벽 전체에 홀드가 흩뿌려짐. 루트 없음 | Stage 1 |
+| `RandomWallGenerator` | spline 한 줄기를 따라가는 루트 | Stage 2 |
+
+둘 다 **버릴 코드다.** 최종 시스템의 홀드는 CV 출력에서 온다. 그래서 벽
+안에 두지 않고 `ClimbingWall`의 공개 API만 쓰는 별도 컴포넌트로 뺐다.
+지울 때 `ClimbingWall`은 건드리지 않는다.
+
+### ScatteredWallGenerator (Stage 1)
+
+Stage 1은 **정해진 자세에서 시작해 limb 하나와 목표 홀드 하나를 받는다.**
+그래서 홀드가 climbable한 줄기를 이룰 필요가 없고, 오히려 climber 주변
+**모든 방향에 후보 타깃이 있어야** 한다. 루트를 만들면 그게 방해가 된다.
+
+dart throwing으로 뿌린다 --- `margin` 안쪽에 점을 찍고 이미 놓인 것과
+`minSeparation`보다 가까우면 버린다. 시도 횟수에 상한이 있어 반드시
+끝난다. Poisson-disk 정식 알고리즘(Bridson)은 이 개수에 과하다.
+
+`minSeparation` 0.45 m는 `graspRadius`(0.2 m)에서 나온다. 이보다 촘촘하면
+한 번의 리치가 두 홀드 중 아무 쪽에나 붙을 수 있어 타깃이 모호해진다.
+
+**role은 전부 `Normal`이다.** start도 top도 없다. 이 벽에는 완주할 루트가
+없으므로 `ClimbingWall.TopHold`는 null이고 탑아웃은 종료 조건이 아니다.
+`ResetOnHold(null)`은 `ResetBody()`로 떨어지므로 수동 조작 도구는 벽에
+붙지 않고 그냥 선 자세로 시작한다.
+
+실측 (4×6 m 벽, 시드 300개, 기본값 holdCount 50 / minSeparation 0.45 /
+margin 0.3):
+
+-   50개 전부 배치 성공, 최소 쌍간 거리 0.450 m, 경계 이탈 0건
+-   벽 위 임의의 점에서 **가장 가까운 홀드까지 최악 0.737 m**, 평균
+    0.561 m. ragdoll 리치가 1.09 m이므로 여유가 있다
+-   limb에서 0.7 m 안의 후보 홀드 개수: **최소 1개**, 평균 3.7개.
+    어느 시작 자세를 잡아도 닿는 타깃이 존재한다는 뜻이다
+
+밀도를 더 올리면 dart throwing이 포화한다 --- holdCount 60이면 시드에 따라
+56개만 들어가 개수 보장이 깨진다. 50이 개수와 커버리지를 둘 다 만족하는
+지점이라 기본값으로 뒀다.
+
+### RandomWallGenerator (Stage 2)
 
 `RandomWallGenerator` (`Assets/01Scripts/Testing/`)
-
-**버릴 코드다.** 최종 시스템의 홀드는 CV 출력에서 온다. 이건 perception이
-없는 동안 Phase 1이 랜덤 레이아웃으로 학습하기 위한 것이라, 벽 안에 두지
-않고 `ClimbingWall`의 공개 API만 쓰는 별도 컴포넌트로 뺐다. 지울 때
-`ClimbingWall`은 건드리지 않는다.
 
 `Generate(seed)`는 루트를 spline으로 그린다.
 

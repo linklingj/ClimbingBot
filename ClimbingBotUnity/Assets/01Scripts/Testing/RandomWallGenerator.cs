@@ -20,7 +20,7 @@ namespace ClimbingBot.Testing
     /// Throwaway: the shipped system takes its holds from CV output, not from here.
     /// </summary>
     [RequireComponent(typeof(ClimbingWall))]
-    public class RandomWallGenerator : MonoBehaviour
+    public class RandomWallGenerator : MonoBehaviour, IWallGenerator
     {
         [Header("Fixed holds (wall-local height, m)")]
         [Tooltip("Only the height is fixed. The x is read off the spline, so the start hold sits on the route rather than beside it.")]
