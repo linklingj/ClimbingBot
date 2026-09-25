@@ -105,3 +105,6 @@ InitTestScene*.unity*
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
 
+# Odin Inspector (paid asset store plugin, not committed)
+/[Aa]ssets/Plugins/Sirenix*
+
