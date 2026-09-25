@@ -2961,7 +2961,7 @@ MonoBehaviour:
   thighR: {fileID: 1471451120586602917}
   shinR: {fileID: 1141629522868234935}
   footR: {fileID: 7717884938372330209}
-  graspRadius: 0.2
+  graspRadius: 0.3
   handCapacity: 1
   footCapacity: 2
 --- !u!114 &1230126438722169484

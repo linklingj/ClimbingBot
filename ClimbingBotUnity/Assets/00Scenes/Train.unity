@@ -4952,10 +4952,6 @@ PrefabInstance:
       propertyPath: m_Name
       value: ClimberRagdoll
       objectReference: {fileID: 0}
-    - target: {fileID: 6808351167860980605, guid: dd62a2a5a838943fba3d2cbb377a75b3, type: 3}
-      propertyPath: graspRadius
-      value: 0.3
-      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
