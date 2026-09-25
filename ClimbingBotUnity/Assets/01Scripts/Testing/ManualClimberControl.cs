@@ -25,6 +25,12 @@ namespace ClimbingBot.Testing
 
         public Limb Selected { get; set; } = Limb.LeftHand;
 
+        void Start()
+        {
+            // Begin on the route rather than wherever the scene left the ragdoll standing.
+            ragdoll.ResetOnHold(StartHold());
+        }
+
         void Update()
         {
             var keyboard = Keyboard.current;
@@ -34,7 +40,7 @@ namespace ClimbingBot.Testing
                 if (keyboard.wKey.wasPressedThisFrame) Selected = Limb.RightHand;
                 if (keyboard.aKey.wasPressedThisFrame) Selected = Limb.LeftFoot;
                 if (keyboard.sKey.wasPressedThisFrame) Selected = Limb.RightFoot;
-                if (keyboard.rKey.wasPressedThisFrame) ragdoll.ResetBody();
+                if (keyboard.rKey.wasPressedThisFrame) ragdoll.ResetOnHold(StartHold());
             }
 
             var mouse = Mouse.current;
@@ -54,6 +60,16 @@ namespace ClimbingBot.Testing
             if (toTarget.sqrMagnitude < 1e-6f) return;
 
             limb.GetComponent<Rigidbody>().AddForce(toTarget.normalized * reachForce);
+        }
+
+        public Hold StartHold()
+        {
+            foreach (var hold in wall.StartHolds)
+            {
+                return hold;
+            }
+
+            return null;
         }
 
         public void GraspNearestHold()

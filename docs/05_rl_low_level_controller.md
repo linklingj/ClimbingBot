@@ -124,8 +124,11 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
 구현: `ClimberRagdoll.Grasp/Release`
 (`Assets/01Scripts/Ragdoll/ClimberRagdoll.cs`)
 
--   limb endpoint에 `FixedJoint`를 붙이고 `connectedBody = null`로 두어
-    월드에 고정한다. 홀드는 static geometry이므로 Rigidbody가 없다.
+-   limb endpoint에 `ConfigurableJoint`를 붙이고 `connectedBody = null`로
+    두어 월드에 고정한다. 홀드는 static geometry이므로 Rigidbody가 없다.
+-   **선형 3축만 잠그고 각도는 푼다.** 손이 홀드 위에서 회전한다는 뜻이고,
+    이게 "limb을 홀드 위치에 고정"이라는 정의에 맞다. `FixedJoint`로
+    방향까지 용접하면 안 되는 이유는 아래 참고.
 -   고정 위치는 **홀드 중심이 아니라 limb의 현재 위치**다. 순간이동으로
     인한 물리 pop을 피하기 위한 선택이고, grasp radius가 작으므로 오차는
     그 범위 안에 머문다.
@@ -134,8 +137,9 @@ ML-Agents의 joint control action을 사용하여 목표 관절 회전/힘을
 -   `Grasp(limb, hold)`는 어느 홀드를 잡았는지 기억한다. 클리어 판정에
     필요하다.
 
-측정: 중간 홀드를 한 손으로 잡고 2초간 매달렸을 때 손 드리프트
-0.026 m, 발은 공중 1.93 m. `FixedJoint`가 체중을 버틴다.
+측정: 중간 홀드를 한 손으로 잡고 매달렸을 때 손 드리프트 0.046 m, 발은
+공중. 선형 잠금만으로 체중을 버틴다.
+
 
 ## 수동 조작 도구 (테스트 전용)
 
@@ -149,6 +153,25 @@ raw force를 걸어 끌 뿐이라 `ClimbingAgent`가 내보낼 joint target과�
 아무 관계가 없다. `Agent.Heuristic()`에 넣지 않고 별도 MonoBehaviour로
 둔 이유다. Agent가 같은 ragdoll을 몰기 시작하면 이 컴포넌트는 꺼야
 한다. 둘이 서로 싸운다.
+
+## 에피소드 시작 자세
+
+`ClimberRagdoll.ResetOnHold(hold)` --- 리셋하면 **양손이 start 홀드를 잡은
+상태**로 시작한다.
+
+authored pose가 T자이므로 양팔을 홀드 쪽으로 겨눠 두 손을 홀드에 모은다.
+한 홀드에 두 손이 닿으려면 각 어깨가 홀드에서 팔 길이만큼 떨어져야 하고,
+어깨선이 그 오프셋과 수직이므로 어깨 중점은
+`sqrt(팔길이² - 어깨너비/2²)`만큼 떨어뜨린다.
+
+홀드 높이에 따라 자세가 갈린다. 서서 닿지 않는 높이면 홀드 **아래로
+매달리고**, 닿는 높이면 뒤로 물러나 **선다**. 후자가 없으면 낮은 start
+홀드에서 발이 바닥 아래로 파묻힌다.
+
+주의: 아직 관절을 지시하는 주체가 없어서 slerpDrive가 T자세로 되돌리려
+당긴다. 그 결과 시작 후 손이 15 cm 정도 끌려가 평형에 멈춘다(계속
+미끄러지지는 않는다). controller가 joint target을 잡기 시작하면 줄어들
+값이다.
 
 ## 클리어 판정
 
@@ -205,6 +228,8 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
 -   `AddHold(id, wallPosition)` / `ClearHolds()`만 제공한다. **홀드를
     어디에 놓을지는 벽이 정하지 않는다** --- Phase 1은 랜덤 생성기,
     이후에는 CV 출력이 정한다.
+-   홀드는 `holdPrefab`(`Assets/03Prefabs/Hold_0.prefab`)을 찍어낸다.
+    `SplineInstantiate`도 같은 프리팹을 쓰므로 홀드의 정의가 하나다.
 
 `Hold` (`Assets/01Scripts/Wall/Hold.cs`)
 
