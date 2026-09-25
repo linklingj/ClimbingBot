@@ -1,8 +1,12 @@
 using System.Collections.Generic;
 using System.Reflection;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.Splines;
+#if ODIN_INSPECTOR
+// Odin is a paid asset and this repository is public, so it is not committed. The inspector
+// buttons are a convenience; everything here still works from code without them.
+using Sirenix.OdinInspector;
+#endif
 
 namespace ClimbingBot.Testing
 {
@@ -52,13 +56,20 @@ namespace ClimbingBot.Testing
 
         public ClimbingWall Wall => GetComponent<ClimbingWall>();
 
+#if ODIN_INSPECTOR
         [Button("Generate with random seed")]
+#else
+        [ContextMenu("Generate with random seed")]
+#endif
         public void GenerateWithRandomSeed()
         {
             Generate(Random.Range(int.MinValue, int.MaxValue));
         }
 
+#if ODIN_INSPECTOR
+        // No [ContextMenu] fallback: it only binds parameterless methods.
         [Button("Generate with seed")]
+#endif
         public void Generate(int seed)
         {
             var wall = Wall;
