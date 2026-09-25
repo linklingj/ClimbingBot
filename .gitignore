@@ -15,6 +15,7 @@ results/
 /outputs/
 /lightning_logs/
 events.out.tfevents.*
+/worklog/log_videos
 
 # Python (CV 학습, candidate generator, VLM 파이프라인)
 __pycache__/
