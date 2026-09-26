@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using ClimbingBot.Testing;
@@ -56,6 +57,16 @@ namespace ClimbingBot.Training
         [Range(0.3f, 1f)]
         public float reachFraction = 0.95f;
 
+        [Header("Debug view")]
+        [Tooltip("Colour of the hold the commanded limb has to reach. Nothing observes it -- this is for watching a run, not an input to the agent.")]
+        public Color targetHoldColor = new Color(1f, 0.42f, 0.1f);
+
+        [Tooltip("The wall flashes this colour when the commanded limb lands its target.")]
+        public Color successFlashColor = new Color(0.25f, 0.85f, 0.35f);
+
+        [Tooltip("How long the success flash lasts, in real seconds. 0 turns it off.")]
+        public float successFlashSeconds = 0.5f;
+
         public Limb TargetLimb { get; private set; }
         public Hold TargetHold { get; private set; }
 
@@ -63,6 +74,11 @@ namespace ClimbingBot.Training
         public bool IsTargetReached => TargetHold != null && ragdoll.GraspedHold(TargetLimb) == TargetHold;
 
         static readonly Limb[] k_Limbs = { Limb.LeftHand, Limb.RightHand, Limb.LeftFoot, Limb.RightFoot };
+        static readonly int k_BaseColor = Shader.PropertyToID("_BaseColor");
+
+        Renderer m_Slab;
+        MaterialPropertyBlock m_Block;
+        Coroutine m_Flash;
 
 #if ODIN_INSPECTOR
         [Button("Reset episode (random seed)")]
@@ -81,6 +97,15 @@ namespace ClimbingBot.Training
         /// </summary>
         public bool ResetEpisode(int seed)
         {
+            // The episode that just ended is still standing here -- OnEpisodeBegin runs inside
+            // EndEpisode, and PoseOnWall below is what lets go of the grips. So this is the one
+            // place that can see a success after the fact, which is what keeps the whole debug
+            // view inside Stage 1 instead of putting a hook in ClimbingAgent.
+            if (IsTargetReached)
+            {
+                FlashSuccess();
+            }
+
             var stance = StanceTargets();
 
             var anchors = new List<Vector2>();
@@ -92,7 +117,66 @@ namespace ClimbingBot.Training
 
             generator.Generate(seed, anchors);
             PoseOnWall(stance);
-            return PickTarget(new System.Random(seed));
+
+            if (!PickTarget(new System.Random(seed)))
+            {
+                return false;
+            }
+
+            // Generate() paints every hold normalColor on the way in, so this needs no undo.
+            TargetHold.color = targetHoldColor;
+            TargetHold.ApplyColor();
+            return true;
+        }
+
+        /// <summary>
+        /// Tints the wall slab for a moment so a success is visible while watching a run. Uses a
+        /// MaterialPropertyBlock rather than Renderer.material: the 16 training areas share one
+        /// material and .material would instantiate a copy per area.
+        /// </summary>
+        void FlashSuccess()
+        {
+            if (successFlashSeconds <= 0f)
+            {
+                return;
+            }
+
+            if (m_Slab == null)
+            {
+                var slab = wall.transform.Find("Slab");
+                m_Slab = slab == null ? null : slab.GetComponent<Renderer>();
+                if (m_Slab == null)
+                {
+                    return;
+                }
+            }
+
+            if (m_Flash != null)
+            {
+                StopCoroutine(m_Flash);
+            }
+
+            m_Flash = StartCoroutine(Flash());
+        }
+
+        IEnumerator Flash()
+        {
+            if (m_Block == null)
+            {
+                m_Block = new MaterialPropertyBlock();
+            }
+
+            m_Slab.GetPropertyBlock(m_Block);
+            m_Block.SetColor(k_BaseColor, successFlashColor);
+            m_Slab.SetPropertyBlock(m_Block);
+
+            // Realtime, not scaled: training runs at time_scale 20, where half a second of game
+            // time is 25 ms and the flash would be over before a frame draws it.
+            yield return new WaitForSecondsRealtime(successFlashSeconds);
+
+            // null clears the override, so the slab goes back to the material's own colour.
+            m_Slab.SetPropertyBlock(null);
+            m_Flash = null;
         }
 
         /// <summary>World positions the four limb endpoints should occupy, all on the wall face.</summary>
