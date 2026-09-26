@@ -30,11 +30,14 @@ namespace ClimbingBot.Training
         public float maxDrop = 1.0f;
 
         [Header("Reward weights")]
-        [Tooltip("Per metre of progress the commanded limb makes toward its target. Potential-based: the total is bounded by the start distance, so it cannot be farmed by oscillating.")]
+        [Tooltip("Per metre the commanded limb closes on its target, counted on closest approach only -- moving away costs nothing. Still bounded by the start distance and still not farmable by oscillating, because each metre pays once.")]
         public float progressReward = 2f;
 
         [Tooltip("Paid once when the commanded limb grasps its target hold.")]
         public float successReward = 1f;
+
+        [Tooltip("Paid once the first time the commanded limb lets go. Small on purpose: it only has to outweigh the time an attempt costs, so that trying and missing beats never trying. Calibration knob -- raise it if hands still refuse to release, drop it if the climber lets go and then loiters.")]
+        public float releaseReward = 0.1f;
 
         [Tooltip("Paid once when the climber falls.")]
         public float fallPenalty = -1f;
@@ -58,7 +61,11 @@ namespace ClimbingBot.Training
         // Indexed by (int)Limb throughout, never by action-branch index. The two happen to agree
         // today; relying on that would break the moment a limb is added or reordered.
         readonly Hold[] m_Assigned = new Hold[4];
-        float m_PrevDistance;
+        // Closest the commanded limb has ever been to its target this episode. Progress is paid
+        // off this ratchet, not off the last step, so an attempt can never score worse than
+        // standing still.
+        float m_BestDistance;
+        bool m_ReleasePaid;
         float m_StartHipsY;
         float m_StartTime;
         bool m_Ready;
@@ -114,7 +121,8 @@ namespace ClimbingBot.Training
             }
 
             m_Assigned[(int)env.TargetLimb] = env.TargetHold;
-            m_PrevDistance = TargetDistance();
+            m_BestDistance = TargetDistance();
+            m_ReleasePaid = false;
             m_StartHipsY = m_Ragdoll.hips.position.y;
             m_StartTime = Time.fixedTime;
             m_PendingLimb = env.TargetLimb;
@@ -347,9 +355,27 @@ namespace ClimbingBot.Training
                 return;
             }
 
+            // Paid on the closest approach only -- moving away is free. The symmetric version
+            // charged for every metre opened, which made letting go a losing bet: an attempt that
+            // ended further out scored below never moving at all. That is exactly what stage1-03
+            // measured -- feet reached 100% while both hands sat at 0% for 2.4M steps, because a
+            // hand that lets go drops the body and its distance grows before it can shrink.
             var distance = TargetDistance();
-            AddReward((m_PrevDistance - distance) * progressReward);
-            m_PrevDistance = distance;
+            if (distance < m_BestDistance)
+            {
+                AddReward((m_BestDistance - distance) * progressReward);
+                m_BestDistance = distance;
+            }
+
+            // The ratchet above takes the penalty off a failed attempt; this puts an attempt ahead
+            // of standing still. Once only -- the commanded limb cannot re-grasp its old hold
+            // (CanGrasp only ever offers the target), so there is nothing to cycle.
+            if (!m_ReleasePaid && !m_Ragdoll.IsGrasping(env.TargetLimb))
+            {
+                AddReward(releaseReward);
+                m_ReleasePaid = true;
+            }
+
             AddReward(-timePenalty);
 
             if (supportPenalty > 0f)
