@@ -2961,7 +2961,7 @@ MonoBehaviour:
   thighR: {fileID: 1471451120586602917}
   shinR: {fileID: 1141629522868234935}
   footR: {fileID: 7717884938372330209}
-  graspRadius: 0.3
+  graspRadius: 0.2
   handCapacity: 1
   footCapacity: 2
 --- !u!114 &1230126438722169484
@@ -2979,7 +2979,7 @@ MonoBehaviour:
   agentParameters:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
-  MaxStep: 1000
+  MaxStep: 300
   env: {fileID: 0}
   episodeSeed: 0
   maxDrop: 1

@@ -264,7 +264,7 @@ MonoBehaviour:
   footOffsetL: {x: -0.26, y: -0.58}
   footOffsetR: {x: 0.26, y: -0.58}
   belowTolerance: 0.2
-  minStep: 0.3
+  minStep: 0.45
   reachFraction: 0.95
 --- !u!1 &9058269974322388975
 GameObject:
