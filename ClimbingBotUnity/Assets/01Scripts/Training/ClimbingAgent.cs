@@ -62,6 +62,11 @@ namespace ClimbingBot.Training
         float m_StartHipsY;
         float m_StartTime;
         bool m_Ready;
+        // The episode in flight, held for the stats. A MaxStep timeout ends the episode inside
+        // ML-Agents without passing through FixedUpdate, so there is no third branch to hook: an
+        // outcome still pending at the next OnEpisodeBegin was a timeout.
+        Limb m_PendingLimb;
+        bool m_Pending;
 
         public override void Initialize()
         {
@@ -85,6 +90,11 @@ namespace ClimbingBot.Training
         {
             m_Jd = m_Ragdoll.JdController;
 
+            if (m_Pending)
+            {
+                RecordOutcome(false);
+            }
+
             // A layout can come out with no reachable target. Redraw rather than run a dead episode.
             m_Ready = false;
             for (var attempt = 0; attempt < 8 && !m_Ready; attempt++)
@@ -107,6 +117,27 @@ namespace ClimbingBot.Training
             m_PrevDistance = TargetDistance();
             m_StartHipsY = m_Ragdoll.hips.position.y;
             m_StartTime = Time.fixedTime;
+            m_PendingLimb = env.TargetLimb;
+            m_Pending = true;
+        }
+
+        /// <summary>
+        /// Closes out one episode in TensorBoard. StatsRecorder averages over a summary_freq window,
+        /// so Success/&lt;limb&gt; reads as that limb's success rate and ClearTime/&lt;limb&gt; as its mean
+        /// reach time. Clear time takes successes only -- a fall or a timeout has no reach time, and
+        /// substituting MaxStep would make that mean a second success-rate curve.
+        /// </summary>
+        void RecordOutcome(bool success)
+        {
+            var stats = Academy.Instance.StatsRecorder;
+            stats.Add("Success/" + m_PendingLimb, success ? 1f : 0f);
+
+            if (success)
+            {
+                stats.Add("ClearTime/" + m_PendingLimb, Time.fixedTime - m_StartTime);
+            }
+
+            m_Pending = false;
         }
 
         /// <summary>Distance from the commanded limb to the hold it has to reach.</summary>
@@ -229,8 +260,8 @@ namespace ClimbingBot.Training
             // Shoulders take three: humeral axial rotation (angZ) is what makes an overhead reach
             // reachable at all. With it locked, a grid over the other two axes could not get the
             // hand above 0.28 m *below* the shoulder; unlocking it reaches 0.70 m above (docs/05).
-            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], c[++i]);
-            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], c[++i]);
+            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], 0f);
+            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], 0f);
             bp[m_Ragdoll.forearmL].SetJointTargetRotation(c[++i], 0f, 0f);
             bp[m_Ragdoll.forearmR].SetJointTargetRotation(c[++i], 0f, 0f);
 
@@ -335,14 +366,7 @@ namespace ClimbingBot.Training
             if (env.IsTargetReached)
             {
                 AddReward(successReward);
-
-                // Reach time for this limb, in simulated seconds. StatsRecorder averages over a
-                // summary_freq window, so TensorBoard's ClearTime/<limb> is already the mean.
-                // Successes only: a fall or a timeout has no reach time, and substituting MaxStep
-                // would turn the mean into a success-rate proxy. Read it beside the fall rate.
-                Academy.Instance.StatsRecorder.Add("ClearTime/" + env.TargetLimb,
-                    Time.fixedTime - m_StartTime);
-
+                RecordOutcome(true);
                 EndEpisode();
                 return;
             }
@@ -350,6 +374,7 @@ namespace ClimbingBot.Training
             if (m_Ragdoll.hips.position.y < m_StartHipsY - maxDrop)
             {
                 AddReward(fallPenalty);
+                RecordOutcome(false);
                 EndEpisode();
             }
         }

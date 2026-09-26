@@ -2902,13 +2902,13 @@ MonoBehaviour:
     VectorObservationSize: 256
     NumStackedVectorObservations: 1
     m_ActionSpec:
-      m_NumContinuousActions: 43
+      m_NumContinuousActions: 41
       BranchSizes: 03000000030000000300000003000000
     VectorActionSize: 
     VectorActionDescriptions: []
     VectorActionSpaceType: 1
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 0}
+  m_Model: {fileID: 5022602860645237092, guid: 7bb373dc2f4944fc7ab9f808b7703d88, type: 3}
   m_InferenceDevice: 2
   m_BehaviorType: 0
   m_BehaviorName: Climber

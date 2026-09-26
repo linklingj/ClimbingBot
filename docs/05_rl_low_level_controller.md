@@ -690,16 +690,22 @@ Stage 1 구현:
 -   **시간 초과** --- `Agent.MaxStep` 1000 결정(=100초). 보너스도 패널티도
     없다.
 
+두 TensorBoard 지표(`Success/<limb>`, `ClearTime/<limb>`)는 `StatsRecorder`가
+`summary_freq` 구간 안에서 평균을 내므로 그래프가 곧 limb별 성공률과 평균
+클리어 시간이다. 시간 초과는 ML-Agents 내부에서 에피소드를 끝내 `FixedUpdate`를
+거치지 않으므로, 기록을 다음 `OnEpisodeBegin`까지 미뤄 그때까지 남아 있는
+미기록 에피소드를 시간 초과로 처리한다.
+
 Stage 2 이후로 미룬 것: 일정 시간 pose 유지 요구, 비정상 자세 판정.
 
 ## 평가
 
--   Target pose success rate
+-   Target pose success rate --- TensorBoard `Success/<limb>`. 성공 1, 추락과
+    시간 초과 0.
 -   평균 pose completion time --- TensorBoard `ClearTime/<limb>`.
-    `StatsRecorder`가 `summary_freq` 구간 안에서 평균을 내므로 그래프가 곧
-    limb별 평균이다. **성공한 에피소드만** 들어간다 --- 추락/시간 초과는
-    도달 시간이 없고, `MaxStep`으로 대신 채우면 평균이 성공률 지표로
-    변한다. fall rate와 같이 봐야 의미가 있다.
+    **성공한 에피소드만** 들어간다 --- 추락/시간 초과는 도달 시간이 없고,
+    `MaxStep`으로 대신 채우면 평균이 성공률 지표로 변한다. 그래서 반드시
+    `Success/<limb>`와 같이 읽는다.
 -   Fall rate
 -   Grasp success rate
 -   연속 N-pose 수행 성공률
