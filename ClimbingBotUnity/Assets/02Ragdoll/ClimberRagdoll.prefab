@@ -292,8 +292,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &817210725458528490
@@ -397,8 +397,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &1305995760539956326
@@ -1076,8 +1076,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &2503082026446516309
@@ -1279,8 +1279,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &2547913224165027939
@@ -1984,8 +1984,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &3649524790373613545
@@ -2639,8 +2639,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &4375708460194622345
@@ -2750,7 +2750,7 @@ ConfigurableJoint:
   m_ZMotion: 0
   m_AngularXMotion: 1
   m_AngularYMotion: 1
-  m_AngularZMotion: 0
+  m_AngularZMotion: 1
   m_LinearLimitSpring:
     spring: 0
     damper: 0
@@ -2777,7 +2777,7 @@ ConfigurableJoint:
     bounciness: 0
     contactDistance: 0
   m_AngularZLimit:
-    limit: 0
+    limit: 60
     bounciness: 0
     contactDistance: 0
   m_TargetPosition: {x: 0, y: 0, z: 0}
@@ -2845,8 +2845,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &4409675767907316506
@@ -2902,13 +2902,13 @@ MonoBehaviour:
     VectorObservationSize: 256
     NumStackedVectorObservations: 1
     m_ActionSpec:
-      m_NumContinuousActions: 41
+      m_NumContinuousActions: 43
       BranchSizes: 03000000030000000300000003000000
     VectorActionSize: 
     VectorActionDescriptions: []
     VectorActionSpaceType: 1
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 5fb07379fa20b43bbab71847a399a54b, type: 3}
+  m_Model: {fileID: 0}
   m_InferenceDevice: 2
   m_BehaviorType: 0
   m_BehaviorName: Climber
@@ -3207,8 +3207,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &4875131236924254349
@@ -3979,8 +3979,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &6942980172043134913
@@ -4272,8 +4272,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &8186187740333259570
@@ -4653,7 +4653,7 @@ ConfigurableJoint:
   m_ZMotion: 0
   m_AngularXMotion: 1
   m_AngularYMotion: 1
-  m_AngularZMotion: 0
+  m_AngularZMotion: 1
   m_LinearLimitSpring:
     spring: 0
     damper: 0
@@ -4680,7 +4680,7 @@ ConfigurableJoint:
     bounciness: 0
     contactDistance: 0
   m_AngularZLimit:
-    limit: 0
+    limit: 60
     bounciness: 0
     contactDistance: 0
   m_TargetPosition: {x: 0, y: 0, z: 0}
@@ -4748,8 +4748,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0
 --- !u!1 &8991525264902532053
@@ -4956,7 +4956,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   agent: {fileID: 0}
-  agentDoneOnGroundContact: 1
-  penalizeGroundContact: 1
+  agentDoneOnGroundContact: 0
+  penalizeGroundContact: 0
   groundContactPenalty: -1
   touchingGround: 0

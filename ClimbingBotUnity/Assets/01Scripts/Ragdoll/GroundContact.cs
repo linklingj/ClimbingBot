@@ -11,7 +11,13 @@ public class GroundContact : MonoBehaviour
 {
     [HideInInspector] public Agent agent;
 
+    // Off in ClimberRagdoll.prefab, and it has to stay off. Agent.EndEpisode() resets synchronously,
+    // so calling it from OnCollisionEnter runs the whole episode reset inside PhysX's contact
+    // callback -- where DestroyImmediate is illegal, which is every reset this project does.
+    // ClimbingAgent ends episodes from FixedUpdate instead (target reached / hips dropped / MaxStep).
     [Header("Ground Check")] public bool agentDoneOnGroundContact; // Whether to reset agent on ground contact.
+    // Also off: this pays with SetReward, which *overwrites* the step's reward rather than adding to
+    // it, so one contact erases ClimbingAgent's progress shaping for that step.
     public bool penalizeGroundContact; // Whether to penalize on contact.
     public float groundContactPenalty; // Penalty amount (ex: -1).
     public bool touchingGround;

@@ -60,6 +60,7 @@ namespace ClimbingBot.Training
         readonly Hold[] m_Assigned = new Hold[4];
         float m_PrevDistance;
         float m_StartHipsY;
+        float m_StartTime;
         bool m_Ready;
 
         public override void Initialize()
@@ -105,6 +106,7 @@ namespace ClimbingBot.Training
             m_Assigned[(int)env.TargetLimb] = env.TargetHold;
             m_PrevDistance = TargetDistance();
             m_StartHipsY = m_Ragdoll.hips.position.y;
+            m_StartTime = Time.fixedTime;
         }
 
         /// <summary>Distance from the commanded limb to the hold it has to reach.</summary>
@@ -224,8 +226,11 @@ namespace ClimbingBot.Training
             bp[m_Ragdoll.chest].SetJointTargetRotation(c[++i], c[++i], c[++i]);
             bp[m_Ragdoll.head].SetJointTargetRotation(c[++i], c[++i], 0f);
 
-            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], 0f);
-            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], 0f);
+            // Shoulders take three: humeral axial rotation (angZ) is what makes an overhead reach
+            // reachable at all. With it locked, a grid over the other two axes could not get the
+            // hand above 0.28 m *below* the shoulder; unlocking it reaches 0.70 m above (docs/05).
+            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], c[++i]);
+            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], c[++i]);
             bp[m_Ragdoll.forearmL].SetJointTargetRotation(c[++i], 0f, 0f);
             bp[m_Ragdoll.forearmR].SetJointTargetRotation(c[++i], 0f, 0f);
 
@@ -330,6 +335,14 @@ namespace ClimbingBot.Training
             if (env.IsTargetReached)
             {
                 AddReward(successReward);
+
+                // Reach time for this limb, in simulated seconds. StatsRecorder averages over a
+                // summary_freq window, so TensorBoard's ClearTime/<limb> is already the mean.
+                // Successes only: a fall or a timeout has no reach time, and substituting MaxStep
+                // would turn the mean into a success-rate proxy. Read it beside the fall rate.
+                Academy.Instance.StatsRecorder.Add("ClearTime/" + env.TargetLimb,
+                    Time.fixedTime - m_StartTime);
+
                 EndEpisode();
                 return;
             }
