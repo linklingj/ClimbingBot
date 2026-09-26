@@ -260,8 +260,8 @@ namespace ClimbingBot.Training
             // Shoulders take three: humeral axial rotation (angZ) is what makes an overhead reach
             // reachable at all. With it locked, a grid over the other two axes could not get the
             // hand above 0.28 m *below* the shoulder; unlocking it reaches 0.70 m above (docs/05).
-            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], 0f);
-            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], 0f);
+            bp[m_Ragdoll.armL].SetJointTargetRotation(c[++i], c[++i], c[++i]);
+            bp[m_Ragdoll.armR].SetJointTargetRotation(c[++i], c[++i], c[++i]);
             bp[m_Ragdoll.forearmL].SetJointTargetRotation(c[++i], 0f, 0f);
             bp[m_Ragdoll.forearmR].SetJointTargetRotation(c[++i], 0f, 0f);
 
