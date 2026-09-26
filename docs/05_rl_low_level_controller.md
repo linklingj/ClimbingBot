@@ -687,8 +687,17 @@ Stage 1 구현:
 -   **추락** --- hips가 시작 높이에서 `maxDrop`(1 m) 아래. `−1.0`, 즉시 종료.
     태그나 접지 판정이 아니라 낙차 하나로 본다. 숫자 하나라 튜닝이 쉽고
     "매달린 채 늘어짐"과 "떨어짐"을 가른다.
--   **시간 초과** --- `Agent.MaxStep` 1000 결정(=100초). 보너스도 패널티도
-    없다.
+    **Stage 1에서는 한 번도 발화하지 않는다**(실측 0/365). 지지 limb 셋이
+    월드에 고정돼 hips가 1 m를 못 떨어진다 --- 실패는 전부 시간 초과다.
+    추락이 실제 종료 경로가 되는 건 지지 limb을 푸는 Stage 2부터다.
+-   **시간 초과** --- `Agent.MaxStep` 1000. 보너스도 패널티도 없다.
+    **단위는 결정이 아니라 물리 스텝이다**: `StepCount`는 academy 스텝마다
+    오르므로 1000 = 200결정 = 20초다(TensorBoard의 `Environment/Episode
+    Length`는 반대로 결정 단위라 5를 곱해야 `StepCount`와 맞는다).
+
+`stage1-02`(3.5M 스텝)는 `Success/<limb>`가 붙기 전에 돌아서 로그만으로는
+성공률을 알 수 없었고, 별도 평가 하네스로 재야 했다(75%, 09-26 worklog).
+다음 런부터는 그래프에서 바로 읽힌다.
 
 두 TensorBoard 지표(`Success/<limb>`, `ClearTime/<limb>`)는 `StatsRecorder`가
 `summary_freq` 구간 안에서 평균을 내므로 그래프가 곧 limb별 성공률과 평균
