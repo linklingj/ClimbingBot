@@ -1,8 +1,9 @@
 # Stage 1 --- single limb to a single hold (docs/05).
 #
-# Hyperparameters start from ml-agents' ppo/Walker.yaml: same ragdoll, same JointDriveController,
-# same action shape, so its settings are the closest known-good starting point. Differences are
-# noted below and are all consequences of the task being shorter than walking.
+# Hyperparameters started from ml-agents' ppo/Walker.yaml: same ragdoll, same JointDriveController,
+# same action shape, so its settings were the closest known-good starting point. What is still
+# actually inherited from Walker at this point is noted where it matters; the rest has been
+# retuned against measured runs (see worklog/2026-09-26-stage1-02-analysis.md).
 behaviors:
   Climber:
     trainer_type: ppo
@@ -10,11 +11,18 @@ behaviors:
       batch_size: 2048
       buffer_size: 20480
       learning_rate: 0.0003
-      beta: 0.003
+      beta: 0.005
       epsilon: 0.2
       lambd: 0.95
       num_epoch: 3
-      learning_rate_schedule: linear
+      # All three pinned constant, not just learning_rate. stage1-04 ran under the ml-agents
+      # default (linear decay to 0 by max_steps) for its first 9M steps: RightHand was still stuck
+      # at 5% success when beta had already decayed to a third of its start value, and it only broke
+      # out once a --resume picked these up as constant. A schedule that starves exploration before
+      # every limb has converged punishes whichever one is slowest to learn.
+      learning_rate_schedule: constant
+      beta_schedule: constant
+      epsilon_schedule: constant
     network_settings:
       # Walker uses 256 wide. The observation here is 256 wide and carries four target slots on top
       # of the body, so the first layer is not the bottleneck to start with; raise this before
@@ -30,9 +38,8 @@ behaviors:
         gamma: 0.99
         strength: 1.0
     keep_checkpoints: 5
-    # Far short of Walker's 30M: the episode terminates on success rather than running forever, and
-    # the task is one move. Raise it if the success rate is still climbing when this runs out.
-    max_steps: 5000000
-    # The agent's MaxStep is 1000 decisions, so no episode outlives this horizon.
+    max_steps: 20000000
+    # Agent.MaxStep is 300 *physics* steps (60 decisions, docs/05) -- this is in decision-steps and
+    # only has to clear that, so it is not a knob that needs to track MaxStep 1:1.
     time_horizon: 1000
     summary_freq: 20000

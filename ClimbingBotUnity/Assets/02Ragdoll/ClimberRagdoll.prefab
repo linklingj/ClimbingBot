@@ -2908,7 +2908,7 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 1
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 7bb373dc2f4944fc7ab9f808b7703d88, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: 6d050c5749d8741bc9cd0271d5ebbaf6, type: 3}
   m_InferenceDevice: 2
   m_BehaviorType: 0
   m_BehaviorName: Climber
