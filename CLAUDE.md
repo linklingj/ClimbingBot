@@ -28,9 +28,9 @@ ClimbingBotUnity/Assets/
 src/vlm/                    candidate generator, VLM planner, 합성 Scene JSON
 ```
 
-끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini structured output,
-검증/재요청/fallback, plan-replan 루프, 오프라인 selftest.
-다음: 실제 Gemini 키로 valid move rate / 완등률을 greedy 베이스라인과 비교.
+끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini/OpenAI structured
+output, 요청 한 번에 전체 시퀀스를 받아 재생하는 planner, 오프라인 selftest.
+다음: valid move rate / 완등률을 greedy 베이스라인과 비교.
 
 **학습 실행**
 
@@ -45,10 +45,11 @@ mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
 **VLM 실행**
 
 ```
-cp .env.example .env                        # GEMINI_API_KEY 채울 것
-PYTHONPATH=src python -m vlm --seed 3 --out out/seed3
-PYTHONPATH=src python -m vlm --seed 3 --offline   # 키 없이 greedy 베이스라인
-PYTHONPATH=src python -m vlm.selftest             # 모델 없이 도는 검증
+cp .env.example .env                        # GEMINI_API_KEY / OPENAI_API_KEY
+PYTHONPATH=src python -m vlm --wall 3 --out out/wall3   # gemini-3.8-flash
+PYTHONPATH=src python -m vlm --wall 3 --model gpt       # gpt-6-sol
+PYTHONPATH=src python -m vlm --wall 3 --offline         # 키 없이 greedy 베이스라인
+PYTHONPATH=src python -m vlm.selftest                   # 모델 없이 도는 검증
 ```
 
 빌드/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서 돌린다 ---

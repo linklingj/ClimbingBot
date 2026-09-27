@@ -31,6 +31,24 @@ class ReachModel:
     max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
 
 
+def blocked_holds(pose: Pose, limb: str) -> set[int]:
+    """Holds this limb may not move to: the one it is already on, and any hold that would leave the
+    four limbs on fewer than three holds.
+
+    Matching -- two limbs on one hold -- is allowed, and any two limbs may do it: hand/hand (Unity
+    clears the route only when *both* hands are on the top hold, ClimberRagdoll.IsToppedOut, so this
+    is how a plan finishes), foot/foot, and hand/foot, which is a real technique and the one the VLM
+    kept asking for. The hip/shoulder line in candidates() is what keeps a hand-foot match sane: a
+    foot can only take a hand's hold if that hold is below the shoulders.
+
+    What stays forbidden is all four limbs on two holds -- not a position a climber hangs in, and
+    greedy went there on 22% of its poses when nothing stopped it. The three-hold floor is the whole
+    rule; the old "one matched pair at a time" was a proxy for it that also banned hand-foot.
+    """
+    return {pose[limb]} | {held for held in set(pose.values())
+                           if len(set({**pose, limb: held}.values())) < 3}
+
+
 def anchors(scene: Scene, pose: Pose, model: ReachModel = ReachModel()) -> dict[str, tuple[float, float]]:
     """Where each limb reaches from: shoulders and hips hung off the centre of the four contacts."""
     xs, ys = zip(*(scene.position(pose[limb]) for limb in LIMBS))
@@ -51,7 +69,6 @@ def candidates(
 ) -> dict[str, list[int]]:
     """Reachable route holds per limb. A limb with no candidate is left out."""
     route = set(scene.route.hold_ids)
-    held = {pose[limb] for limb in LIMBS}
     anchor = anchors(scene, pose, model)
     hip_y = anchor["left_foot"][1]
     shoulder_y = anchor["left_hand"][1]
@@ -59,12 +76,13 @@ def candidates(
 
     out: dict[str, list[int]] = {}
     for limb in LIMBS:
+        blocked = blocked_holds(pose, limb)
         step = model.hand_step if limb in HANDS else model.foot_step
         here = scene.position(pose[limb])
         opposite_x = scene.position(pose[OPPOSITE[limb]])[0]
         found = []
         for hold in scene.holds:
-            if hold.id not in route or hold.id in held:
+            if hold.id not in route or hold.id in blocked:
                 continue
             x, y = hold.position
             if math.dist(here, hold.position) > step:  # one limb, one step

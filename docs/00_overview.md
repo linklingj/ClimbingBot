@@ -212,10 +212,9 @@ controller를 학습한다. 실제 루트는 추론 단계에서 target pose로 
 -   candidate generator 구현
 -   VLM 입력 JSON schema 정의
 -   structured output 정의
--   단일 move 생성
--   multi-step pose sequence 생성
--   실패 시 re-planning
--   VLM → RL 연결 및 plan-execute-replan 루프 검증
+-   **요청 한 번에 전체 move 시퀀스 생성** (docs/04 "Planning 전략")
+-   시퀀스 재생 + move별 검증, 첫 불가능 move에서 중단
+-   VLM → RL 연결, 실행이 계획과 어긋나면 그 pose에서 다시 계획
 
 ### Phase 3 --- Perception
 
@@ -266,8 +265,9 @@ controller를 학습한다. 실제 루트는 추론 단계에서 target pose로 
   VLM의 불가능한 move     높음                    candidate generator로
   생성                                            action space 제한
 
-  VLM 장기 계획 오류      높음                    step-wise planning 및
-                                                  re-planning
+  VLM 장기 계획 오류      높음                    move별 검증으로 실행
+                                                  가능한 prefix만 취하고
+                                                  그 지점에서 재계획
 
   RL이 목표 pose에        매우 높음               curriculum,
   도달하지 못함                                   randomization, dense

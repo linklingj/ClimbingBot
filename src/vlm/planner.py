@@ -1,56 +1,65 @@
-"""VLM High-Level Planner (docs/04): candidates -> one move -> validate -> re-plan.
+"""VLM High-Level Planner (docs/04): one request, the whole sequence of moves, then replay.
 
-Short horizon by design. One move per request, pose updated, candidates regenerated -- docs/04
-prefers this over emitting a whole route in one shot, because the plan has to survive contact with
-the physics. The multi-step sequence is what the loop accumulates, so there is no separate
-multi-move schema to keep in sync.
+The model gets the route, the starting pose and its reach budget, and writes out every limb move in
+order. There is no candidate list in the prompt and no re-planning: the planner replays the sequence
+against the reach model and stops at the first move that is not physically available, because that
+is where the RL controller would stop too.
 """
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 
-from .candidates import Pose, ReachModel, candidates, initial_pose
-from .providers import GreedyChooser, MoveChooser
+from .candidates import Pose, ReachModel, blocked_holds, candidates, initial_pose
+from .providers import MoveChooser
 from .render import render
 from .scene import HANDS, LIMBS, Scene
 
-SYSTEM = """You are an experienced climber working out the beta for a route, one limb move at a
-time. You are not searching for a path -- the holds are given. You are choosing the move a strong
-climber would actually make.
+SYSTEM = """You are an experienced climber working out the beta for a route. You are not searching
+for a path -- the holds are given. Write out the whole sequence of limb moves, in order, that a
+strong climber would actually make, from the starting body position to the top.
 
 INPUT
-An image of the wall: hold ids labelled, your four limbs ringed in blue and joined by blue lines,
-the holds you can reach right now ringed in yellow. The same state as JSON, plus `history`, your
-own last few moves.
+An image of the wall: hold ids labelled, your four limbs at the start ringed in blue and joined by
+blue lines. The same state as JSON: every hold on the route, the body's starting position, and
+`limits`, how far one limb may travel in a single move.
 
 RULES (hard)
-- Move exactly one limb. The other three stay where they are.
-- Only a hold listed in `candidates` for that limb. Nothing else exists for you.
-- Get a hand to `goal.top_hold_id`.
+- One move = exactly one limb to exactly one hold. The other three stay where they are.
+- Only holds listed in `holds`. Nothing else exists for you.
+- A limb may travel at most `limits.hand_step` (hands) or `limits.foot_step` (feet) metres from the
+  hold it is on at that point in YOUR OWN sequence. Nothing resets between moves, so track where all
+  four limbs are as you go -- a move is measured from where that limb actually is by then, not from
+  where it started.
+- TWO LIMBS MAY OCCUPY THE SAME HOLD. This is matching, and any pair may do it: both hands on one
+  hold, both feet on one hold, or a foot on a hold a hand is already on (a hand-foot match, where
+  you step up onto your own handhold -- a normal technique). A hold being occupied is never by itself
+  a reason to avoid it. The one arrangement forbidden is all four limbs on two holds.
+- Finish with BOTH hands on `goal.top_hold_id`. The route is cleared only once the second hand
+  matches on it, so plan the last two moves together: bring the feet up high enough that the second
+  hand can follow.
 
 HOW A CLIMBER CHOOSES (in this order)
 
-1. Keep a triangle. The three limbs that stay put are your support. They are stable when they
-   spread into a wide triangle -- two feet apart with a hand above, or two hands apart with a foot
-   below -- and unstable when they line up or bunch into one spot. Before you commit, picture the
-   triangle you are hanging from.
+1. Keep a triangle. Limbs are stable when they spread into a wide triangle -- 
+   two feet apart with a hand above, or two hands apart with a foot
+   below -- and unstable when they line up or bunch into one spot.
 
-2. Do not ball up. Four limbs crowded onto neighbouring holds folds the body, pushes the hips off
-   the wall and swings your weight backwards off the holds. Stay open: hands roughly a torso above
-   the feet, arms straight, hips in close, weight on the feet.
+2. Do not ball up. Four limbs crowded onto neighbouring holds folds the body, pull your weight backwards off the holds. 
+   Keep distance between hand and feet: at least 1 metre, ideally 1.5 metres.
 
-3. Feet first, and alternate.
-   Read `history`: do not move the same limb twice in a row, and never put a limb back on the hold
-   it just came off
+3. Move up or sideways. Every move should gain height or set up the next one.
 
-4. Reach from a stance, not from a stretch. A move made with the hips low and the arms locked out
-   long is a move you cannot control. If the reach is far, bring a foot up first.
+4. Feet first, and alternate. Do not move the same limb twice in a row, and never put a limb
+   back on the hold it just came off
 
-5. Think one move ahead. Prefer the move that leaves the next one available; a hold that strands
+5. Reach from a stance, not from a stretch. A move made with the hips low and the arms locked out
+   long is a move you cannot control.
+
+6. Think one move ahead. Prefer the move that leaves the next one available; a hold that strands
    you with nothing in reach is worse than a smaller gain.
 
 `reason`: one short sentence, written before you commit, naming what makes the move stable."""
+
 
 
 @dataclass
@@ -60,8 +69,6 @@ class Move:
     from_hold_id: int = -1
     reason: str = ""
     pose: Pose = field(default_factory=dict)  # pose after the move
-    retries: int = 0
-    fell_back: bool = False
 
     def targets(self) -> dict:
         """The docs/07 target pose the RL controller consumes: all four limbs, one of them moving."""
@@ -76,16 +83,19 @@ class Move:
 
 @dataclass
 class Plan:
-    moves: list[Move]
+    moves: list[Move]  # the executable prefix: every move up to the first one that was not
     reached_top: bool
     model: str
     stopped: str = ""
-    requests: int = 0
-    invalid: int = 0
+    proposed: int = 0  # moves the model wrote
+    examined: int = 0  # moves replayed, including the one that failed
+    request_png: bytes | None = None  # the exact image the model was sent
 
     @property
     def valid_move_rate(self) -> float:
-        return 1.0 - self.invalid / self.requests if self.requests else 0.0
+        """Share of the replayed sequence that was physically available. 1.0 means the whole thing
+        ran; `proposed` > `examined` means it kept writing moves after the route was cleared."""
+        return len(self.moves) / self.examined if self.examined else 0.0
 
     @property
     def repeated_limb(self) -> int:
@@ -107,61 +117,63 @@ class Plan:
             "model": self.model,
             "reached_top": self.reached_top,
             "stopped": self.stopped,
-            "requests": self.requests,
-            "invalid": self.invalid,
+            "proposed": self.proposed,
+            "examined": self.examined,
+            "executed": len(self.moves),
             "valid_move_rate": round(self.valid_move_rate, 3),
             "repeated_limb": self.repeated_limb,
             "backtracks": self.backtracks,
             "moves": [
                 {"moving_limb": m.moving_limb, "from_hold_id": m.from_hold_id,
-                 "target_hold_id": m.target_hold_id, "reason": m.reason, "retries": m.retries,
-                 "fell_back": m.fell_back, "pose": m.pose, **m.targets()}
+                 "target_hold_id": m.target_hold_id, "reason": m.reason, "pose": m.pose,
+                 **m.targets()}
                 for m in self.moves
             ],
         }
 
 
-def move_schema(cands: dict[str, list[int]]) -> dict:
-    """Enums for both fields, per docs/04. Hold ids are strings because the JSON-schema subset
-    Gemini accepts only enumerates strings; the pairing is what validate() still has to check."""
-    ids = sorted({hold_id for hold_ids in cands.values() for hold_id in hold_ids})
-    return {
+def plan_schema(scene: Scene, max_moves: int) -> dict:
+    """The whole route as a list of moves. Hold ids are strings because the JSON-schema subset Gemini
+    accepts only enumerates strings, and the enum is every hold on the route -- there is no candidate
+    list to narrow it to, so validate() is the only thing checking limb and hold against each other.
+
+    `reason` comes first so the model writes a sentence before committing to each move.
+    """
+    move = {
         "type": "object",
         "properties": {
             "reason": {"type": "string"},
-            "moving_limb": {"type": "string", "enum": sorted(cands)},
-            "target_hold_id": {"type": "string", "enum": [str(i) for i in ids]},
+            "moving_limb": {"type": "string", "enum": sorted(LIMBS)},
+            "target_hold_id": {"type": "string",
+                               "enum": [str(i) for i in sorted(scene.route.hold_ids)]},
         },
         "required": ["reason", "moving_limb", "target_hold_id"],
         "propertyOrdering": ["reason", "moving_limb", "target_hold_id"],
     }
+    return {
+        "type": "object",
+        "properties": {"moves": {"type": "array", "items": move, "maxItems": max_moves}},
+        "required": ["moves"],
+        "propertyOrdering": ["moves"],
+    }
 
 
-def build_payload(
-    scene: Scene,
-    pose: Pose,
-    cands: dict[str, list[int]],
-    error: str | None = None,
-    history: list["Move"] | None = None,
-) -> dict:
-    payload = {
+def build_payload(scene: Scene, pose: Pose, model: ReachModel) -> dict:
+    """The model's whole world: the route, where the body starts, and the reach budget. No candidate
+    list -- working out what is in reach is the model's job now -- and no history, because it is
+    writing the history itself."""
+    return {
         "goal": {"top_hold_id": scene.route.top_hold_id},
         "body": dict(pose),
-        # Each request is the model's whole world, so without this it cannot tell that it is
-        # shuffling one foot back and forth -- it never sees its own last answer.
-        "history": [{"moving_limb": m.moving_limb, "from_hold_id": m.from_hold_id,
-                     "to_hold_id": m.target_hold_id} for m in (history or [])[-3:]],
+        "limits": {"hand_step": model.hand_step, "foot_step": model.foot_step},
         "holds": [{"id": scene.hold(hid).id, "position": list(scene.hold(hid).position)}
                   for hid in scene.route.hold_ids],
-        "candidates": {limb: list(ids) for limb, ids in cands.items()},
     }
-    if error:
-        payload["previous_answer_rejected"] = error
-    return payload
 
 
 def validate(move: dict, scene: Scene, pose: Pose, cands: dict[str, list[int]]) -> str | None:
-    """docs/04's checks. Returns the reason it is invalid, or None."""
+    """docs/04's checks against the pose the move is issued from. Returns why it is not available,
+    or None."""
     limb = move.get("moving_limb")
     if limb not in LIMBS:
         return f"moving_limb must be one of {list(LIMBS)}"
@@ -173,10 +185,14 @@ def validate(move: dict, scene: Scene, pose: Pose, cands: dict[str, list[int]]) 
         return f"hold {hold_id} is not on the route"
     if pose[limb] == hold_id:
         return f"{limb} already holds {hold_id}"
-    if hold_id in pose.values():
-        return f"hold {hold_id} is already held by another limb"
+    if hold_id in blocked_holds(pose, limb):
+        # Naming the occupant matters: the rule is not one-limb-per-hold, so "already held" alone
+        # reads as if it contradicted the prompt's matching rule.
+        others = [l for l in LIMBS if l != limb and pose[l] == hold_id]
+        return (f"hold {hold_id} is held by {' and '.join(others)}; moving {limb} there would leave "
+                f"all four limbs on two holds, which is not a position you can hang in")
     if hold_id not in cands.get(limb, []):
-        return f"hold {hold_id} is not in candidates.{limb} ({cands.get(limb, [])})"
+        return f"hold {hold_id} is out of reach for {limb} from hold {pose[limb]}"
     return None
 
 
@@ -186,63 +202,42 @@ def plan(
     pose: Pose | None = None,
     model: ReachModel = ReachModel(),
     max_moves: int = 60,
-    max_retries: int = 2,
     with_image: bool = True,
     on_step=None,
 ) -> Plan:
-    """Runs the loop until a hand reaches the top hold, nothing is reachable, or max_moves."""
+    """One request for the whole sequence, then replay it move by move.
+
+    The reach filter is still the referee -- it just no longer tells the model the answer. There is
+    no retry and no greedy fallback: the first move it rejects ends the plan, which is where the RL
+    controller would stop too. `on_step(index, move)` is called for each move that executed.
+    """
     pose = dict(pose or initial_pose(scene))
     result = Plan(moves=[], reached_top=False, model=getattr(chooser, "name", "unknown"))
-    fallback = GreedyChooser(scene)
-    top = scene.route.top_hold_id
-    seen: Counter[tuple] = Counter()
+    result.request_png = render(scene, pose, {}) if with_image else None
+    answer = chooser.choose(SYSTEM, build_payload(scene, pose, model),
+                            plan_schema(scene, max_moves), result.request_png)
+    proposed = answer.get("moves", [])[:max_moves]
+    result.proposed = len(proposed)
 
-    while len(result.moves) < max_moves:
-        key = tuple(sorted(pose.items()))
-        seen[key] += 1
-        # Revisiting a pose twice is fine (a climber may back off a move); a third time is a loop,
-        # and the planner is the only thing that can see it -- the model gets one state at a time.
-        if seen[key] > 2:
-            result.stopped = "the plan started repeating poses"
-            return result
-
-        if any(pose[limb] == top for limb in HANDS):
-            result.reached_top = True
-            return result
-
-        cands = candidates(scene, pose, model)
-        if not cands:
-            result.stopped = "no reachable candidate for any limb"
-            return result
-
-        image = render(scene, pose, cands) if with_image else None
-        schema = move_schema(cands)
-        error, chosen, retries, fell_back = None, None, 0, False
-        # max_retries model attempts after the first, then the greedy fallback as the last word.
-        for attempt in range(max_retries + 2):
-            active = chooser if attempt <= max_retries else fallback
-            fell_back = active is fallback
-            result.requests += 1
-            payload = build_payload(scene, pose, cands, error, result.moves)
-            answer = active.choose(SYSTEM, payload, schema, image)
-            error = validate(answer, scene, pose, cands)
-            if error is None:
-                chosen = answer
-                break
-            result.invalid += 1
-            retries = attempt + 1
-
-        if chosen is None:  # even the fallback failed: a bug here, not a bad model
-            result.stopped = f"no valid move after {max_retries + 2} attempts: {error}"
-            return result
-
-        limb = chosen["moving_limb"]
+    for index, step in enumerate(proposed, start=1):
+        error = validate(step, scene, pose, candidates(scene, pose, model))
+        result.examined += 1
+        if error:
+            result.stopped = f"move {index} unusable: {error}"
+            break
+        limb = step["moving_limb"]
         came_from = pose[limb]
-        pose[limb] = int(chosen["target_hold_id"])
-        move = Move(limb, pose[limb], came_from, chosen.get("reason", ""), dict(pose), retries, fell_back)
+        pose[limb] = int(step["target_hold_id"])
+        move = Move(limb, pose[limb], came_from, step.get("reason", ""), dict(pose))
         result.moves.append(move)
         if on_step:
-            on_step(len(result.moves), move, image)
+            on_step(index, move)
+        # Both hands, not one: this mirrors ClimberRagdoll.IsToppedOut, which is what actually clears
+        # the route in Unity (docs/07). Anything the model wrote after this is ignored.
+        if all(pose[hand] == scene.route.top_hold_id for hand in HANDS):
+            result.reached_top = True
+            break
 
-    result.stopped = f"hit max_moves={max_moves}"
+    if not result.reached_top and not result.stopped:
+        result.stopped = f"the sequence ended after {len(result.moves)} moves, short of the top"
     return result
