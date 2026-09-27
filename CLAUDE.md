@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 현재 상태
 
-Phase 1 (RL Controller) 진행 중. `ClimbingBotUnity/`가 Unity 6000.3 URP 프로젝트이고
-ML-Agents 4.1.0, AR Foundation이 들어 있다. `src/`는 아직 비어 있다.
+Phase 1 (RL Controller) 진행 중, Phase 2 (VLM Planner) 착수.
+`ClimbingBotUnity/`가 Unity 6000.3 URP 프로젝트이고 ML-Agents 4.1.0, AR Foundation이
+들어 있다. `src/vlm/`이 candidate generator + VLM planner다 (파이썬, Unity 불필요).
 
 ```
 ClimbingBotUnity/Assets/
@@ -23,6 +24,14 @@ ClimbingBotUnity/Assets/
 산포), 클리어 판정, Stage 1 에피소드 구성, `ClimbingAgent`.
 다음: Stage 1 학습을 실제로 돌려 보상/자세를 조정.
 
+```
+src/vlm/                    candidate generator, VLM planner, 합성 Scene JSON
+```
+
+끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini structured output,
+검증/재요청/fallback, plan-replan 루프, 오프라인 selftest.
+다음: 실제 Gemini 키로 valid move rate / 완등률을 greedy 베이스라인과 비교.
+
 **학습 실행**
 
 ```
@@ -32,6 +41,15 @@ mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
 
 프롬프트가 뜨면 에디터에서 Play. `Run In Background`가 꺼져 있으면 에디터가
 포커스를 잃는 순간 플레이 루프가 멈춘다.
+
+**VLM 실행**
+
+```
+cp .env.example .env                        # GEMINI_API_KEY 채울 것
+PYTHONPATH=src python -m vlm --seed 3 --out out/seed3
+PYTHONPATH=src python -m vlm --seed 3 --offline   # 키 없이 greedy 베이스라인
+PYTHONPATH=src python -m vlm.selftest             # 모델 없이 도는 검증
+```
 
 빌드/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서 돌린다 ---
 `Physics.Simulate`는 `FixedUpdate`를 호출하지 않으므로 **아카데미 루프를
