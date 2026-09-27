@@ -437,6 +437,23 @@ action mask로 건다. `graspRadius`는 홀드 크기에 맞춰 조정하는 값
     이후에는 CV 출력이 정한다.
 -   홀드는 `holdPrefab`(`Assets/03Prefabs/Hold_0.prefab`)을 찍어낸다.
     `SplineInstantiate`도 같은 프리팹을 쓰므로 홀드의 정의가 하나다.
+-   `AddHold`/`ClearHolds`는 **`ObjectPoolManager`(`Util/`)가 있으면 그걸
+    쓴다.** Stage 1은 에피소드마다 홀드 ~70개를 통째로 부수고 다시 찍는데,
+    벽시계의 45%가 여기서 나갔다(`worklog/2026-09-26-stage1-02-analysis.md`
+    09-27 추가분, 16영역 기준). 매니저가 없는 씬(예: 수동 테스트)에서는
+    지금까지처럼 그냥 `Instantiate`/`DestroyImmediate`로 떨어진다 ---
+    씬에 아무것도 안 놓으면 동작이 안 바뀐다.
+    `ClearHolds`는 `GetComponentsInChildren<Hold>()`를 **활성 오브젝트만**
+    훑는다. 풀에 반환된 홀드는 마지막으로 있던 벽의 자식으로 비활성인 채
+    남는데(`ObjectPoolManager.Release`가 부모를 안 옮긴다), 여기서 비활성도
+    같이 훑으면 같은 `PoolObject`를 두 번 반환해 풀 큐에 같은 인스턴스가
+    중복으로 들어간다 --- 나중에 서로 다른 두 홀드가 같은 Transform을 공유
+    하는 형태로 터진다. Stage 1에서 살아 있는 홀드는 전부 활성이므로(이
+    코드베이스에서 홀드를 비활성화하는 곳이 여기 말고 없다) 활성만 훑어도
+    전부 잡힌다.
+    실측(16영역 중 1개, 20회 리셋): 1480개 홀드 슬롯을 인스턴스 **96개**로
+    돌려 막았다 --- `Train.unity`의 `ObjectPoolManager` 풀 크기(96, 한
+    벽 분량 74개에 여유를 조금 더한 값)가 정착값이지, 더 커지지 않았다.
 
 `Hold` (`Assets/01Scripts/Wall/Hold.cs`)
 

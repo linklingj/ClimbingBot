@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 4071306256729957199}
   - component: {fileID: 2972314619193923394}
   - component: {fileID: 6053715778285122361}
+  - component: {fileID: 1288636687161973475}
   m_Layer: 0
   m_Name: Hold_0
   m_TagString: Untagged
@@ -129,3 +130,15 @@ MonoBehaviour:
   role: 1
   color: {r: 0.35, g: 0.75, b: 0.35, a: 1}
   wallPosition: {x: 1.9466676, y: 2}
+--- !u!114 &1288636687161973475
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3151378922939324905}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e55927a3fda2041f98a8617fde305d98, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoolObject

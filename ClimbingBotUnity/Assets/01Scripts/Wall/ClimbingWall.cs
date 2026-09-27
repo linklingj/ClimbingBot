@@ -53,12 +53,33 @@ namespace ClimbingBot
             go.GetComponent<MeshRenderer>().sharedMaterial = wallMaterial;
         }
 
-        /// <summary>Adds a hold at a wall-local position. Caller sets role and color.</summary>
+        /// <summary>
+        /// Adds a hold at a wall-local position. Caller sets role and color.
+        ///
+        /// Stage 1 tears down and rebuilds ~70 holds every episode (docs/05 measured this as 45% of
+        /// wall-clock at 16 areas). Drawn from ObjectPoolManager when one is configured for
+        /// holdPrefab; a plain Instantiate whenever it isn't -- no manager placed, or one placed for
+        /// something else -- so scenes that never set up pooling behave exactly as before.
+        /// </summary>
         public Hold AddHold(int id, Vector2 wallPosition)
         {
-            var go = Instantiate(holdPrefab, transform);
+            var pool = ObjectPoolManager.Instance;
+            var go = pool != null ? pool.Get(holdPrefab) : null;
+            if (go == null)
+            {
+                go = Instantiate(holdPrefab);
+            }
+
             go.name = "Hold_" + id;
+            // A pooled instance may arrive parented under a previous wall (or the pool itself) with
+            // whatever local transform it last had; false means don't fight that with a
+            // world-position-preserving reparent, since every value gets overwritten next anyway.
+            go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(wallPosition.x, wallPosition.y, -holdRadius);
+            go.transform.localRotation = Quaternion.identity;
+            // The prefab's own authored scale, not Vector3.one -- Hold_0 is authored at 0.14, and a
+            // reused pooled instance needs resetting back to that, not to an unrelated "identity".
+            go.transform.localScale = holdPrefab.transform.localScale;
 
             var hold = go.GetComponent<Hold>();
             hold.id = id;
@@ -70,10 +91,14 @@ namespace ClimbingBot
         [ContextMenu("Clear Holds")]
         public void ClearHolds()
         {
-            // Immediate, not deferred: a re-dressed wall must not leave last episode's colliders
-            // standing for the rest of the frame. Sweeps children rather than the list so
-            // hand-placed holds go too.
-            foreach (var hold in GetComponentsInChildren<Hold>(true))
+            // Active only, not includeInactive: a released-to-pool hold sits inactive under
+            // whichever wall last owned it (ObjectPoolManager.Release doesn't reparent) until Get()
+            // claims it back out. Sweeping inactive children too would re-release the same
+            // PoolObject a second time -- enqueuing it twice, so two different holds could later
+            // Get() the same instance. Every hold currently in play is active by construction
+            // (nothing else in this codebase deactivates one), so this still finds all of them,
+            // hand-placed test holds included.
+            foreach (var hold in GetComponentsInChildren<Hold>())
             {
 #if UNITY_EDITOR
                 // Selecting a hold and then regenerating leaves the Inspector holding a destroyed
@@ -83,7 +108,19 @@ namespace ClimbingBot
                     UnityEditor.Selection.activeGameObject = gameObject;
                 }
 #endif
-                DestroyImmediate(hold.gameObject);
+                // Immediate either way: SetActive(false) inside Release() drops the collider this
+                // frame same as DestroyImmediate does, so a re-dressed wall never leaves last
+                // episode's colliders standing. Only a hold that was never pool-registered (no
+                // manager was configured for holdPrefab when it was added) gets destroyed here.
+                var poolObject = hold.GetComponent<PoolObject>();
+                if (poolObject != null && poolObject.PrefabID != -1)
+                {
+                    poolObject.Release();
+                }
+                else
+                {
+                    DestroyImmediate(hold.gameObject);
+                }
             }
 
             holds.Clear();
