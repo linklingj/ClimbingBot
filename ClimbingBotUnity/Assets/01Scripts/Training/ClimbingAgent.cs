@@ -29,6 +29,9 @@ namespace ClimbingBot.Training
         [Tooltip("How far the hips may fall below their start height before the episode is a failure (m).")]
         public float maxDrop = 1.0f;
 
+        [Tooltip("How far the hips may drop before the soft dropPenalty starts (m). Below maxDrop's hard cutoff -- this is graduated, that one is terminal.")]
+        public float dropPenaltyThreshold = 0.4f;
+
         [Header("Reward weights")]
         [Tooltip("Per metre the commanded limb closes on its target, counted on closest approach only -- moving away costs nothing. Still bounded by the start distance and still not farmable by oscillating, because each metre pays once.")]
         public float progressReward = 2f;
@@ -47,6 +50,12 @@ namespace ClimbingBot.Training
 
         [Tooltip("Per physics step, for each support limb that is not grasping. Only bites when support limbs are unlocked.")]
         public float supportPenalty = 0.01f;
+
+        [Tooltip("Per physics step, per metre the hips drop past dropPenaltyThreshold. stage1-04 (20M steps, ratchet + release reward, no drop or grip shaping at all) converged to 100% success while dangling a mean 0.51 m and a worst 0.87 m below start -- letting go and falling onto the next hold scored the same as reaching for it, because nothing charged for the fall in between. Calibration knob -- raise it if the climber still dangles, drop it if it stops letting go at all.")]
+        public float dropPenalty = 0.02f;
+
+        [Tooltip("Per physics step, for each grasping limb whose load exceeds its capacity, scaled by the excess in multiples of capacity (GripLoad / Capacity - 1). GripLoad/StabilityScore were diagnostic-only through stage1-04 (docs/05); that run measured a mean foot load of 1.2-1.3x capacity and peaks past 5x on every limb, all invisible to a reward that never looked at it. Calibration knob -- raise it if load stays over capacity, drop it if it fights the grasp itself.")]
+        public float gripLoadPenalty = 0.01f;
 
         [Tooltip("Per physics step, on the squared joint targets. Left at 0: an energy penalty early in training suppresses the exploration that finds the move at all. Turn it up if the learned motion looks twitchy.")]
         public float energyPenalty;
@@ -377,6 +386,37 @@ namespace ClimbingBot.Training
             }
 
             AddReward(-timePenalty);
+
+            // Graduated, unlike the hard cutoff below: the hips can dip this far for free (an
+            // ordinary swing while reaching costs nothing), and every centimetre past it is charged
+            // every step it stays there, growing the closer the climber gets to the fatal 1.0 m.
+            if (dropPenalty > 0f)
+            {
+                var drop = m_StartHipsY - m_Ragdoll.hips.position.y;
+                if (drop > dropPenaltyThreshold)
+                {
+                    AddReward(-dropPenalty * (drop - dropPenaltyThreshold));
+                }
+            }
+
+            // The grasp joint is an unbreakable position lock (docs/05), so nothing here can make
+            // the climber fall -- only this reward term can make overloading it cost anything.
+            if (gripLoadPenalty > 0f)
+            {
+                foreach (var limb in ClimberRagdoll.Limbs)
+                {
+                    if (!m_Ragdoll.IsGrasping(limb))
+                    {
+                        continue;
+                    }
+
+                    var overload = m_Ragdoll.GripLoad(limb) / m_Ragdoll.Capacity(limb) - 1f;
+                    if (overload > 0f)
+                    {
+                        AddReward(-gripLoadPenalty * overload);
+                    }
+                }
+            }
 
             if (supportPenalty > 0f)
             {
