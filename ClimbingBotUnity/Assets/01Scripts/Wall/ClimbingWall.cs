@@ -58,12 +58,16 @@ namespace ClimbingBot
         ///
         /// Stage 1 tears down and rebuilds ~70 holds every episode (docs/05 measured this as 45% of
         /// wall-clock at 16 areas). Drawn from ObjectPoolManager when one is configured for
-        /// holdPrefab; a plain Instantiate whenever it isn't -- no manager placed, or one placed for
-        /// something else -- so scenes that never set up pooling behave exactly as before.
+        /// holdPrefab; a plain Instantiate whenever it isn't -- no manager placed, one placed for
+        /// something else, or edit mode -- so scenes that never set up pooling behave exactly as
+        /// before.
         /// </summary>
         public Hold AddHold(int id, Vector2 wallPosition)
         {
-            var pool = ObjectPoolManager.Instance;
+            // Play mode only. The manager fills its pools in Start(), so in edit mode -- the
+            // generators' inspector buttons -- there is nothing to draw from and asking would log a
+            // miss per hold.
+            var pool = Application.isPlaying ? ObjectPoolManager.Instance : null;
             var go = pool != null ? pool.Get(holdPrefab) : null;
             if (go == null)
             {

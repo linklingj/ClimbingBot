@@ -1,5 +1,8 @@
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Reflection;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Splines;
 #if ODIN_INSPECTOR
@@ -49,6 +52,14 @@ namespace ClimbingBot.Testing
         [Tooltip("Upper bound on the distance between consecutive holds.")]
         public float maxReach;
 
+        [Header("Foot holds")]
+        [Tooltip("Second pass down the same curve, this far lower. One line of holds makes the feet fight the hands for it. 0 turns the pass off.")]
+        public float footDropY = 1f;
+
+        [Header("Export")]
+        [Tooltip("How many walls the export button writes, seeded 0..count-1.")]
+        public int exportCount = 20;
+
         [Header("Colors")]
         public Color normalColor = new Color(0.85f, 0.85f, 0.87f);
         public Color startColor = new Color(0.35f, 0.75f, 0.35f);
@@ -79,14 +90,10 @@ namespace ClimbingBot.Testing
             var topHold = new Vector2(RandomX(wall, rng), topHoldY);
             var container = BuildSpline(wall, rng, topHold);
             var startHold = new Vector2(SplineXAtHeight(container, startHoldY), startHoldY);
-            var placed = BakeAlongSpline(wall, container, seed);
 
             var route = new List<(Vector2 position, HoldRole role)>();
-            foreach (var worldPosition in placed)
+            foreach (var wallPosition in BakeWallPositions(wall, container, seed, 0f))
             {
-                var local = wall.transform.InverseTransformPoint(worldPosition);
-                var wallPosition = new Vector2(local.x, local.y);
-
                 // The spline ends on the top hold and passes through the start hold, so drop whatever
                 // it drops on them rather than stacking two holds in one spot. Half the *tightest*
                 // spacing, so this never eats a hold that is legitimately its own.
@@ -101,6 +108,8 @@ namespace ClimbingBot.Testing
             route.Add((topHold, HoldRole.Top));
             route.Sort((a, b) => a.position.y.CompareTo(b.position.y));
             BridgeGaps(route);
+            AddFootHolds(wall, container, route, seed);
+            route.Sort((a, b) => a.position.y.CompareTo(b.position.y));
 
             for (var i = 0; i < route.Count; i++)
             {
@@ -110,6 +119,115 @@ namespace ClimbingBot.Testing
                     : hold.role == HoldRole.Top ? topColor
                     : normalColor;
                 hold.ApplyColor();
+            }
+        }
+
+        /// <summary>
+        /// Writes exportCount walls to /walls as Scene JSON (docs/07) and leaves the last one
+        /// standing. This is the only route generator in the project -- the planner in src/vlm
+        /// reads these files rather than carrying a second copy of the algorithm, so anything that
+        /// changes the shape of a wall has to be re-exported and committed.
+        /// </summary>
+#if UNITY_EDITOR
+#if ODIN_INSPECTOR
+        [Button("Export walls")]
+#else
+        [ContextMenu("Export walls")]
+#endif
+        public void ExportWalls()
+        {
+            // Application.dataPath is <repo>/ClimbingBotUnity/Assets.
+            var directory = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "walls"));
+            Directory.CreateDirectory(directory);
+
+            for (var seed = 0; seed < exportCount; seed++)
+            {
+                Generate(seed);
+                File.WriteAllText(Path.Combine(directory, $"wall_{seed:D3}.json"), SceneJson());
+            }
+
+            Debug.Log($"Wrote {exportCount} walls to {directory}");
+        }
+#endif
+
+        /// <summary>
+        /// The wall as Scene JSON (docs/07). Hold.role becomes the route's start_hold_ids and
+        /// top_hold_id -- docs/07 calls the JSON the canonical form from Phase 2 on, and role
+        /// cannot express a hold that is a start on one route and a foot hold on another.
+        /// </summary>
+        string SceneJson()
+        {
+            var wall = Wall;
+            var holds = new List<Hold>(wall.Holds);
+            holds.Sort((a, b) => a.id.CompareTo(b.id));
+
+            var invariant = CultureInfo.InvariantCulture;
+            var ids = new List<string>();
+            var starts = new List<string>();
+            var top = "null";
+            var entries = new List<string>();
+
+            foreach (var hold in holds)
+            {
+                var id = hold.id.ToString(invariant);
+                ids.Add(id);
+                if (hold.role == HoldRole.Start) starts.Add(id);
+                if (hold.role == HoldRole.Top) top = id;
+
+                // The planner's renderer keys off these names, not off RGB.
+                var color = hold.role == HoldRole.Start ? "green" : hold.role == HoldRole.Top ? "red" : "white";
+                entries.Add($"    {{\"id\": {id}, \"position\": [{F(hold.wallPosition.x)}, {F(hold.wallPosition.y)}], "
+                            + $"\"color\": \"{color}\"}}");
+            }
+
+            var json = new StringBuilder();
+            json.Append("{\n  \"wall\": {\"coordinate_system\": \"wall_local_2d\", ");
+            json.Append($"\"width\": {F(wall.width)}, \"height\": {F(wall.height)}}},\n");
+            json.Append("  \"holds\": [\n");
+            json.Append(string.Join(",\n", entries));
+            json.Append("\n  ],\n  \"routes\": [\n");
+            json.Append($"    {{\"id\": 0, \"hold_ids\": [{string.Join(", ", ids)}], ");
+            json.Append($"\"start_hold_ids\": [{string.Join(", ", starts)}], \"top_hold_id\": {top}}}\n");
+            json.Append("  ]\n}\n");
+            return json.ToString();
+        }
+
+        // Fixed three decimals, invariant: these files are committed, so the same wall has to
+        // produce the same bytes on every machine.
+        static string F(float value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// A second pass down the same curve, dropped footDropY. The route is one line of holds, so
+        /// hands and feet compete for it and the feet usually lose; this puts something under them
+        /// without moving where the route goes.
+        ///
+        /// Deliberately after BridgeGaps. These holds sit off the hand line, so they are not links
+        /// in the chain whose consecutive gaps that bounds -- bridging a hand hold to a foot hold
+        /// that merely happens to sit between it and the next one would hang holds in mid-air.
+        /// </summary>
+        void AddFootHolds(ClimbingWall wall, SplineContainer container, List<(Vector2 position, HoldRole role)> route, int seed)
+        {
+            if (footDropY <= 0f)
+            {
+                return;
+            }
+
+            // Translating a curve does not change its shape or its arc length, so re-baking and
+            // subtracting is the dropped spline. A fresh seed so the spacing and jitter are drawn
+            // again rather than copying the hand line's rungs one drop lower.
+            foreach (var wallPosition in BakeWallPositions(wall, container, seed + 1, footDropY))
+            {
+                // The drop runs the bottom of the curve into the floor.
+                if (wallPosition.y < wall.holdRadius) continue;
+
+                // Nothing closer than the route's own tightest spacing is a hold of its own. Checked
+                // against what is already placed, so this pass does not crowd itself either.
+                if (route.Exists(h => Vector2.Distance(h.position, wallPosition) < minHoldSpacing)) continue;
+
+                route.Add((wallPosition, HoldRole.Normal));
             }
         }
 
@@ -194,6 +312,19 @@ namespace ClimbingBot.Testing
 
             spline.Add(new BezierKnot(new Unity.Mathematics.float3(topHold.x, topHold.y, 0f)), TangentMode.AutoSmooth);
             return container;
+        }
+
+        /// <summary>One bake, in wall-local 2D, with the whole pass moved down by dropY.</summary>
+        List<Vector2> BakeWallPositions(ClimbingWall wall, SplineContainer container, int seed, float dropY)
+        {
+            var positions = new List<Vector2>();
+            foreach (var worldPosition in BakeAlongSpline(wall, container, seed))
+            {
+                var local = wall.transform.InverseTransformPoint(worldPosition);
+                positions.Add(new Vector2(local.x, local.y - dropY));
+            }
+
+            return positions;
         }
 
         /// <summary>

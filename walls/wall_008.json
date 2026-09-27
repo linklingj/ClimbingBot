@@ -1,0 +1,17 @@
+{
+  "wall": {"coordinate_system": "wall_local_2d", "width": 4, "height": 6},
+  "holds": [
+    {"id": 0, "position": [1.533, 0.5], "color": "white"},
+    {"id": 1, "position": [2.231, 0.901], "color": "white"},
+    {"id": 2, "position": [1.914, 1.3], "color": "green"},
+    {"id": 3, "position": [2.126, 1.656], "color": "white"},
+    {"id": 4, "position": [2.458, 2.411], "color": "white"},
+    {"id": 5, "position": [2.135, 3.065], "color": "white"},
+    {"id": 6, "position": [2.34, 3.702], "color": "white"},
+    {"id": 7, "position": [2.958, 4.398], "color": "white"},
+    {"id": 8, "position": [2.811, 5], "color": "red"}
+  ],
+  "routes": [
+    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8], "start_hold_ids": [2], "top_hold_id": 8}
+  ]
+}

@@ -32,12 +32,10 @@ public class ObjectPoolManager : Singleton<ObjectPoolManager>
         public int count;
     }
 
-    private Dictionary<int, PoolQueue> _poolDictionary;//여기다 풀링할 오브젝트들 저장해둠 
-
-    protected void Awake()
-    {
-        _poolDictionary = new Dictionary<int, PoolQueue>();
-    }
+    //여기다 풀링할 오브젝트들 저장해둠. Awake가 아니라 선언부에서 만든다 --- 에디트 모드에서는
+    //Awake가 돌지 않는데 Singleton.Instance는 씬에 있는 매니저를 그대로 찾아주므로, Awake에서
+    //만들면 Get/Release가 null 딕셔너리를 건드려 터진다.
+    private readonly Dictionary<int, PoolQueue> _poolDictionary = new Dictionary<int, PoolQueue>();
 
     private void Start()
     {

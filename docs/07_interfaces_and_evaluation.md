@@ -80,7 +80,10 @@ Unity 쪽 `Hold`는 start/top을 **홀드 자신의 `role`**
 (`Normal`/`Start`/`Top`)로 들고 있다. 위 Scene JSON처럼 route가
 `start_hold_ids`/`top_hold_id`로 갖고 있지 않다.
 
-Phase 1은 벽 하나에 루트가 하나뿐이라 route 객체가 없기 때문이다. 같은
+Phase 1은 벽 하나에 루트가 하나뿐이라 route 객체가 없기 때문이다. 변환은
+`RandomWallGenerator`의 Scene JSON 익스포터가 한다 --- Unity는 `role`로 들고
+있고, 내보낼 때 route의 `start_hold_ids`/`top_hold_id`가 된다. 합성 벽은
+`/walls/wall_NNN.json`에 이 형식으로 커밋되어 있고 `src/vlm`이 그걸 읽는다. 같은
 홀드가 루트마다 다른 역할을 갖는 상황이 생기는 Phase 2에서 역할을
 `Route`로 옮긴다. 그때 JSON 계약이 정본이다.
 
