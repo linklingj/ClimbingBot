@@ -2983,11 +2983,15 @@ MonoBehaviour:
   env: {fileID: 0}
   episodeSeed: 0
   maxDrop: 1
+  dropPenaltyThreshold: 0.4
   progressReward: 2
   successReward: 1
+  releaseReward: 0.1
   fallPenalty: -1
-  timePenalty: 0.0005
+  timePenalty: 0.001
   supportPenalty: 0.01
+  dropPenalty: 0.02
+  gripLoadPenalty: 0.01
   energyPenalty: 0
   lockSupportLimbs: 1
 --- !u!114 &8476080896166669182
