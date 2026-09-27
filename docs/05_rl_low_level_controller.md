@@ -324,8 +324,12 @@ StabilityScore = 1 - max_over_grasping_limbs(GripLoad / Capacity)   (0~1로 clam
 최솟값이 아니라 **최악 그립**이 점수를 정한다. 평균은 한 손이 전부 지고
 있는 상태를 가린다.
 
-**지금은 진단용이다.** 이 값으로 홀드를 놓게 하거나 reward에 넣지 않는다.
-스태미너 적분(하중을 시간에 대해 누적해 0이 되면 release)은 뒤로 미뤘다.
+**`stage1-04`까지는 진단용이었다.** `ClimbingAgent.gripLoadPenalty`가 이제 이
+값을 읽는다 (아래 "Reward 설계") --- 20M 스텝을 하중 신호 없이 돌린
+`stage1-04`가 손·발 전부 평균 1.2\~1.3배, 피크 5\~8배 과적재인 채로 100%
+수렴했기 때문이다. 스태미너 적분(하중을 시간에 대해 누적해 0이 되면
+release)은 여전히 뒤로 미뤘다 --- 이건 순간 초과에 매 스텝 값을 매기는
+쪽이고, 시간에 걸친 피로 누적은 다른 문제다.
 
 기준값(컨트롤러 없이, slerpDrive가 T자세로 당기는 상태):
 
@@ -612,6 +616,8 @@ slerpDrive 평형과 같은 값이다.
 | 성공 | `+1.0` | 지정 limb이 목표 홀드를 grasp → 종료 |
 | 놓기 | `+0.1` | 지정 limb이 처음 손을 뗀 순간, 에피소드당 한 번 |
 | 추락 | `−1.0` | hips가 시작 높이에서 `maxDrop`(1 m) 아래로 → 종료 |
+| 낙차 | `−0.02 × (낙차 − 0.4)`, `dropPenaltyThreshold`(0.4 m)를 넘을 때만 | 매 스텝 |
+| 그립 하중 | `−0.01 × (GripLoad / Capacity − 1)`, 잡고 있는 limb마다 초과분만큼 | 매 스텝 |
 | 시간 | `−0.0005` | 매 스텝 |
 | 지지 상실 | `−0.01` | 매 스텝, 잡고 있지 않은 support limb마다 |
 | 에너지 | `0` (꺼 둠) | 매 결정, 연속 action 제곱합 |
@@ -636,22 +642,49 @@ slerpDrive 평형과 같은 값이다.
 않는다. support limb의 release가 마스크로 막혀 있기 때문이다. Stage 2에서
 마스크를 풀면 그때부터 의미를 갖는다.
 
-`GripLoad` / `StabilityScore`는 **보상에 넣지 않았다.** 아직 진단용이다
-(위 "그립 하중").
+**낙차·그립 하중 패널티는 `stage1-04` 20M 스텝 평가를 보고 넣었다.** 그
+전까지는 둘 다 관측에도 보상에도 없었다. 결과는 성공률 100%, `ClearTime`도
+짧았지만, hips가 시작보다 평균 0.51 m·최악 0.87 m 내려간 채 잡았고(추락
+기준 1 m 바로 아래) 그립 하중은 손 평균 1.05 BW·피크 5.4\~6.8 BW, 발 평균
+2.5 BW·피크 7.2\~7.7 BW로 capacity를 평균부터 넘었다 --- "리치"가 아니라
+**놓고 떨어지며 다음 홀드에 걸치는** 동작이 성공 100%와 양립한다는 뜻이다.
+grasp 조인트가 힘 제한 없는 위치 고정이라(위 "그립 하중") 물리가 이 동작을
+처벌하지 않고, 보상에도 항이 없었으니 정책이 정확히 그 구멍으로 갔다.
+
+둘 다 **문턱을 넘은 초과분에만** 매기고, 문턱 안쪽은 공짜다. 낙차는 손을
+뻗을 때의 정상적인 흔들림과 실제로 처지는 것을 가르는 `dropPenaltyThreshold`
+(0.4 m, `maxDrop`의 절반 이하) 아래로는 값을 매기지 않는다. 그립 하중은
+`Capacity`(손 1.0 BW·발 2.0 BW) 자체가 이미 "정상 등반에서 이만큼은 걸린다"는
+기준이라 초과분(`GripLoad / Capacity − 1`)만 청구한다. 둘 다 매 스텝 청구라
+초과 상태를 오래 유지할수록 값이 커진다 --- 순간적으로 스치는 것과 계속
+매달려 있는 것을 자연히 가른다.
 
 ## 학습 실행
 
 ``` bash
-pip install mlagents                        # 아직 설치되어 있지 않다
-mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
+mlagents-learn config/climber.yaml --run-id=stage1-05
 # 콘솔에 "Start training by pressing the Play button" 가 뜨면 에디터에서 Play
 ```
 
-`config/climbing_stage1.yaml`은 ml-agents의 `ppo/Walker.yaml`에서 출발했다
---- 같은 ragdoll, 같은 `JointDriveController`, 비슷한 action 모양이라 가장
-가까운 known-good 출발점이다. 바꾼 것은 둘뿐이다. `gamma` 0.995 → 0.99(한
-번의 limb 이동은 1\~2초라 200결정을 거슬러 크레딧할 이유가 없다),
-`max_steps` 30M → 5M(에피소드가 성공으로 끝나고 과제가 한 동작이다).
+`config/climber.yaml`은 ml-agents의 `ppo/Walker.yaml`에서 출발했다 --- 같은
+ragdoll, 같은 `JointDriveController`, 비슷한 action 모양이라 가장 가까운
+known-good 출발점이다. `gamma` 0.995 → 0.99가 가장 근본적인 차이다: 한 번의
+limb 이동은 1\~2초라 200결정을 거슬러 크레딧할 이유가 없다. 나머지
+하이퍼파라미터는 측정 결과를 보며 계속 조정 중이다 --- 값 하나하나의 근거는
+`config/climber.yaml`의 인라인 주석과 `worklog/2026-09-26-stage1-02-analysis.md`
+쪽에 있다. 여기 옮겨 적으면 다음 튜닝에서 바로 stale해진다.
+
+**보상을 바꾸고 이어서 학습시킬 때는 `--initialize-from`을 쓴다.**
+
+``` bash
+mlagents-learn config/climber.yaml --run-id=stage1-05 --initialize-from=stage1-04
+```
+
+`--resume`이 아니라 이쪽이다. `--resume`은 같은 run의 로그에 이어 붙이므로
+보상 함수가 바뀐 지점 전후가 한 그래프에 섞인다. `--initialize-from`은 가중치만
+가져오고 스텝 카운터와 TensorBoard 로그는 0부터 다시 세므로, 새 보상 항(낙차·
+그립 하중, 아래 "Reward 설계")이 실제로 자세를 바꾸는지 이전 곡선과 나란히
+비교할 수 있다.
 
 **`Run In Background`가 켜져 있어야 한다.** 학습은 에디터가 포커스를 잃은
 채로 돌아가는데, 꺼져 있으면 플레이 루프가 통째로 멈춘다(academy step이
@@ -689,7 +722,7 @@ Y축으로 `i × 22.5°` 돌리고 그 바깥 방향으로 apothem만큼 민다.
 | Continuous actions | 43 |
 | Discrete branches | 3, 3, 3, 3 |
 | `DecisionRequester` | period 5 (0.1 s마다 결정) |
-| `Agent.MaxStep` | 1000 결정 |
+| `Agent.MaxStep` | 300 (물리 스텝 단위, = 60결정 = 6 s. 아래 "Episode 종료" 참고) |
 
 `Heuristic()`은 **무동작**이다 --- 모든 관절을 가동범위 중앙에 두고 grasp를
 바꾸지 않는다. 학습기도 모델도 없이 씬을 돌릴 때 placeholder action으로
@@ -704,12 +737,15 @@ Stage 1 구현:
 -   **추락** --- hips가 시작 높이에서 `maxDrop`(1 m) 아래. `−1.0`, 즉시 종료.
     태그나 접지 판정이 아니라 낙차 하나로 본다. 숫자 하나라 튜닝이 쉽고
     "매달린 채 늘어짐"과 "떨어짐"을 가른다.
-    **Stage 1에서는 한 번도 발화하지 않는다**(실측 0/365). 지지 limb 셋이
-    월드에 고정돼 hips가 1 m를 못 떨어진다 --- 실패는 전부 시간 초과다.
-    추락이 실제 종료 경로가 되는 건 지지 limb을 푸는 Stage 2부터다.
--   **시간 초과** --- `Agent.MaxStep` 1000. 보너스도 패널티도 없다.
+    **Stage 1에서는 한 번도 발화하지 않는다**(`stage1-02` 실측 0/365,
+    `stage1-04`도 최악 낙차 0.87 m로 여전히 못 미친다). 지지 limb 셋이 월드에
+    고정돼 hips가 1 m를 못 떨어진다 --- 실패는 전부 시간 초과다. 추락이 실제
+    종료 경로가 되는 건 지지 limb을 푸는 Stage 2부터다. **바로 이 여유가
+    낙차 패널티(위 "Reward 설계")를 필요하게 만들었다** --- 종료 문턱이
+    안 걸릴 만큼 넓어서, 평균 0.51 m를 처지고도 매달아 다니는 게 공짜였다.
+-   **시간 초과** --- `Agent.MaxStep` 300 물리 스텝. 보너스도 패널티도 없다.
     **단위는 결정이 아니라 물리 스텝이다**: `StepCount`는 academy 스텝마다
-    오르므로 1000 = 200결정 = 20초다(TensorBoard의 `Environment/Episode
+    오르므로 300 = 60결정 = 6초다(TensorBoard의 `Environment/Episode
     Length`는 반대로 결정 단위라 5를 곱해야 `StepCount`와 맞는다).
 
 `stage1-02`(3.5M 스텝)는 `Success/<limb>`가 붙기 전에 돌아서 로그만으로는
