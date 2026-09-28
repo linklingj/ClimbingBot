@@ -407,3 +407,13 @@ selftest의 greedy 하한을 18 → 15로 내렸다(현재 step-by-step 16/20, o
 프롬프트 길이: step 27줄, one-shot 34줄(규칙이 셋 늘어서 각각 3\~4줄 늘었다).
 greedy는 후보 순서를 안 보므로 오프라인 수치는 그대로다(step-by-step 16/20, one-shot
 19/20, `check_solvable` 10\~15 move). **모델로는 안 돌렸다 --- 사용자가 확인한다.**
+
+## `reason` 필드 제거 (2026-09-28)
+
+사용자 요청으로 move의 `reason`을 없앴다. 스키마(둘 다), `Move`, `plan.json`, CLI 출력,
+greedy의 고정 문구, selftest의 canned move까지 전부. 스키마에는 이제 `moving_limb`과
+`target_hold_id`뿐이다.
+
+한동안 `reason`을 스키마 **첫 필드**로 두어 모델이 commit 전에 한 줄 쓰게 했었다. 그
+자리가 같이 없어졌으니, 계획 품질이 떨어지면 여기를 먼저 의심할 것 --- 되살릴 때는
+`propertyOrdering`에서 첫 필드로 돌려놓아야 효과가 있다. docs/04에 적어 뒀다.

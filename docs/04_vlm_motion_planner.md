@@ -393,8 +393,10 @@ JSON schema subset이 문자열 enum만 열거하기 때문이다. 스키마는 
 각각 강제할 뿐 **둘의 짝도, 시퀀스의 연속성도 강제하지 못하므로**
 `validate()`의 검사는 그대로 남는다. `maxItems`가 시퀀스 길이를 막는다.
 
-`reason`을 move 스키마의 첫 필드로 두어 모델이 각 move를 정하기 전에 한
-문장을 쓰게 한다.
+move 스키마에는 `moving_limb`과 `target_hold_id`뿐이다. 한동안 `reason`을 첫
+필드로 두어 모델이 각 move를 정하기 전에 한 문장을 쓰게 했는데, 2026-09-28에
+지웠다 --- 출력에서 읽을 것이 줄고, 모델이 commit 전에 한 줄 생각하던 자리도
+같이 없어졌다. 되살릴 거면 첫 필드로(`propertyOrdering`) 돌려놓을 것.
 
 OpenAI strict 모드는 vendor 키워드와 배열 길이 키워드를 거부하고 모든
 property가 `required`여야 하므로 `strict_schema()`가 같은 스키마를 그
