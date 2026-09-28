@@ -439,3 +439,27 @@ greedy의 고정 문구, selftest의 canned move까지 전부. 스키마에는 �
 홀드를 잡지 않는다". 후보 목록이 없는 쪽은 심판이 보는 hard rule을 모르면 그대로 거절당하므로
 step/span/crossing과 같은 취급이다. step-by-step 프롬프트는 안 건드렸다 --- 후보 목록이
 이미 걸러 준다.
+
+## 완등 match를 세 홀드 하한에서 예외로 (2026-09-28, wall 8 step 18)
+
+`out/test3-seed8`(gpt-6-luna, step-by-step) 실행이 18 move에서 `no reachable candidate`로
+멈췄다. 그 pose는 `LH 8, RH 7, LF 6, RF 6`이고 남은 move는 **RH 7→8, 즉 완등 match**
+하나뿐인데 두 규칙이 겹쳐 막았다.
+
+- `blocked_holds`의 **네 limb-두 홀드 금지** --- 발이 6에 매칭 중이라 손을 8에 모으면
+  홀드가 둘(8, 6)이 된다.
+- 평소의 탈출로인 **발을 5로 내려 매칭 풀기**는 직전에 넣은 **body floor**가 막는다
+  (5는 y 3.06, 발이 서 있는 3.70보다 낮다).
+
+`blocked_holds(pose, limb, finish)`에 예외를 넣었다 --- **두 번째 손이 top 홀드로 올라오는
+것은 발 매칭과 무관하게 허용한다.** 다른 홀드에는 예외가 없고 발에도 없다. 세 홀드 하한은
+*매달리는 자세*에 대한 규칙이고, 이 pose는 ragdoll의 클리어 조건 자체(`IsToppedOut`)다.
+그 pose에서 다시 계획하면 한 move로 완등한다.
+
+selftest: `blocked_holds` 예외 assert 세 개(top만, 손만), 그리고 "모든 pose는 서로 다른
+홀드 셋 이상"을 **완등 pose는 제외**로 바꿨다(`_holds_enough`) --- 이제 두 홀드가 되는
+pose가 합법이다. 수치는 그대로(두 모드 19/20, `check_solvable` 10\~15 move).
+
+`check_solvable`이 이 dead end를 못 잡은 이유도 기록해 둔다 --- 그 검사는 **초기 pose에서**
+길이 있는지를 보고, 중간 pose 전부에서 길이 있는지는 보지 않는다. 규칙이 서로 겹쳐 특정
+pose만 막는 경우는 실제 실행에서만 나온다.

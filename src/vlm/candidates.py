@@ -33,7 +33,7 @@ class ReachModel:
     max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
 
 
-def blocked_holds(pose: Pose, limb: str) -> set[int]:
+def blocked_holds(pose: Pose, limb: str, finish: int | None = None) -> set[int]:
     """Holds this limb may not move to: the one it is already on, and any hold that would leave the
     four limbs on fewer than three holds.
 
@@ -43,6 +43,13 @@ def blocked_holds(pose: Pose, limb: str) -> set[int]:
 
     Also forbidden is all four limbs on two holds -- not a position a climber hangs in, and greedy
     went there on 22% of its poses when nothing stopped it.
+
+    `finish` (the top hold) is the one exception: the second hand may always join the first one up
+    there, feet matched or not. Without it a pose one move from the top can have no legal move at all
+    -- wall 8, 18 moves in, hands on 8 and 7 with both feet on 6: the finishing match was refused for
+    leaving four limbs on two holds, and the usual escape (drop a foot, unmatch the feet) is refused
+    by the body floor. The rule it bends is about stances you hang in; this is the move you top out
+    with, and the ragdoll's own clear condition is exactly this pose.
     """
     blocked = {pose[limb]}
     for other in LIMBS:
@@ -51,6 +58,9 @@ def blocked_holds(pose: Pose, limb: str) -> set[int]:
             continue
         if not same_kind or len(set({**pose, limb: pose[other]}.values())) < 3:
             blocked.add(pose[other])
+    if (finish is not None and limb in HANDS and pose[limb] != finish
+            and pose[OPPOSITE[limb]] == finish):
+        blocked.discard(finish)
     return blocked
 
 
@@ -120,7 +130,7 @@ def candidates(
 
     out: dict[str, list[int]] = {}
     for limb in LIMBS:
-        blocked = blocked_holds(pose, limb)
+        blocked = blocked_holds(pose, limb, scene.route.top_hold_id)
         found = [hold.id for hold in scene.holds
                  if hold.id in route and hold.id not in blocked
                  and rejection(scene, pose, limb, hold.id, model) is None]
