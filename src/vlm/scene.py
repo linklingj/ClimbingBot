@@ -15,17 +15,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 LIMBS = ("left_hand", "right_hand", "left_foot", "right_foot")
-# Upper bound on the gap between consecutive holds on the hand line, and the number the Unity
-# generator is set to. ReachModel.hand_step has to cover it or a wall can be unclimbable by
-# construction.
-MAX_REACH = 1.4
 HANDS = ("left_hand", "right_hand")
 FEET = ("left_foot", "right_foot")
 
-# What RandomWallGenerator.maxReach was set to when /walls was exported: the hand line is built so
-# no two consecutive holds on it are further apart than this. Only the checks in selftest use it --
-# if it stops matching the editor, they fail, which is the point.
-MAX_REACH = 1.4
+# What RandomWallGenerator.maxReach is set to: the hand line is built so no two consecutive holds on
+# it are further apart than this, and ReachModel.hand_step has to cover it or a wall is unclimbable
+# by construction. Only the checks in selftest use it -- if it stops matching the editor, they fail,
+# which is the point.
+MAX_REACH = 1.2
 
 
 @dataclass

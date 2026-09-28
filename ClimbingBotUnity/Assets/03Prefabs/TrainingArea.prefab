@@ -2664,17 +2664,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ClimbingBot.Testing.RandomWallGenerator
   startHoldY: 1.3
+  twoStartHoldsChance: 0.5
   topHoldY: 5
   splineBottomY: 0.5
   minKnots: 2
   maxKnots: 4
   sideMargin: 1
   minHoldSpacing: 0.4
-  maxHoldSpacing: 0.8
+  maxHoldSpacing: 0.7
   positionOffsetX: 0.4
-  maxReach: 1.4
+  maxReach: 1.2
   footDropY: 1
-  exportCount: 20
+  exportCount: 50
   normalColor: {r: 0.85, g: 0.85, b: 0.87, a: 1}
   startColor: {r: 0.35, g: 0.75, b: 0.35, a: 1}
   topColor: {r: 0.9, g: 0.3, b: 0.25, a: 1}

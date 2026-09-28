@@ -22,7 +22,7 @@ class ReachModel:
     controller keeps failing moves the generator called reachable, or if it clears moves the
     generator refused. Numbers from a ~1.7 m climber, not measured against the rig yet."""
 
-    hand_step: float = 1.6  # how far a hand may travel in one move
+    hand_step: float = 1.5  # how far a hand may travel in one move
     foot_step: float = 1.3
     min_rise: float = 0.25  # how far the lowest hand must stay above the highest foot
     # How far a limb may reach past its opposite before the pair counts as crossed. 0 means a left
@@ -30,7 +30,7 @@ class ReachModel:
     # It is a tolerance knob, not a technique switch -- a cross-through needs a planner that can plan
     # its way out again, and step by step there is no backtracking.
     cross_margin: float = 0.0
-    max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
+    max_span: float = 2.0  # furthest hand-to-foot distance allowed after the move
 
 
 def blocked_holds(pose: Pose, limb: str, finish: int | None = None) -> set[int]:
@@ -154,14 +154,18 @@ def _span(scene: Scene, pose: Pose) -> float:
 
 
 def initial_pose(scene: Scene) -> Pose:
-    """Feet on the two lowest route holds, hands on the two nearest the start hold's height."""
-    route = sorted((scene.hold(hid) for hid in scene.route.hold_ids), key=lambda h: h.position[1])
-    if len(route) < 4:
-        raise ValueError("a route needs at least four holds to stand on")
-    start = scene.hold(scene.route.start_hold_ids[0])
+    """Feet on the two lowest route holds, hands on the start holds: both hands matched on the one
+    start hold when the route names one, one hand each when it names two -- which is how a climber
+    actually leaves the ground."""
+    starts = sorted((scene.hold(hid) for hid in scene.route.start_hold_ids[:2]),
+                    key=lambda h: h.position[0])
+    hands = starts * 2 if len(starts) == 1 else starts
+    taken = {h.id for h in starts}
+    route = sorted((scene.hold(hid) for hid in scene.route.hold_ids if hid not in taken),
+                   key=lambda h: h.position[1])
+    if len(route) < 2:
+        raise ValueError("a route needs two holds below the start for the feet")
     feet = sorted(route[:2], key=lambda h: h.position[0])
-    hands = sorted(sorted(route[2:], key=lambda h: abs(h.position[1] - start.position[1]))[:2],
-                   key=lambda h: h.position[0])
     return {
         "left_hand": hands[0].id,
         "right_hand": hands[1].id,
