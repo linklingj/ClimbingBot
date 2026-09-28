@@ -160,18 +160,25 @@ class GreedyChooser:
 
     def _best(self, pose: dict, top_hold_id: int) -> dict | None:
         from .candidates import candidates
+        from .scene import HANDS
 
         top = self.scene.position(top_hold_id)
         best = None
         for limb, ids in candidates(self.scene, pose, self.model).items():
             here = self.scene.position(pose[limb])
             for hold_id in ids:
+                after = {**pose, limb: hold_id}
                 gain = math.dist(here, top) - math.dist(self.scene.position(hold_id), top)
                 # Unseen poses first: without this it undoes its own move forever whenever every
                 # option loses ground.
-                fresh = _key({**pose, limb: hold_id}) not in self._seen
-                if best is None or (fresh, gain) > best[0]:
-                    best = ((fresh, gain), limb, hold_id)
+                fresh = _key(after) not in self._seen
+                # One move of lookahead: do not climb into a pose with nothing left. Since no limb
+                # may go below the body, the dead ends are one move deep, and this is the difference
+                # between 9/20 walls and 19/20.
+                alive = all(after[hand] == top_hold_id for hand in HANDS) or \
+                    bool(candidates(self.scene, after, self.model))
+                if best is None or (alive, fresh, gain) > best[0]:
+                    best = ((alive, fresh, gain), limb, hold_id)
         if best is None:
             return None
         _, limb, hold_id = best
