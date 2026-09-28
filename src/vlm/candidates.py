@@ -120,11 +120,15 @@ def candidates(
         found = [hold.id for hold in scene.holds
                  if hold.id in route and hold.id not in blocked
                  and rejection(scene, pose, limb, hold.id, model) is None]
-        # ponytail: sorted by progress towards the top so truncation keeps the useful ones. A
-        # smarter ranking only matters once the prompt is provably too long.
+        # ponytail: truncate by progress towards the top so the cut keeps the useful ones. A smarter
+        # ranking only matters once the prompt is provably too long.
         found.sort(key=lambda hid: math.dist(scene.position(hid), top))
         if found:
-            out[limb] = found[:max_per_limb]
+            # Then hand them over nearest-first. The prompt asks for the nearest hold that gains
+            # height, and a list that led with the furthest one was arguing the opposite.
+            here = scene.position(pose[limb])
+            out[limb] = sorted(found[:max_per_limb],
+                               key=lambda hid: math.dist(here, scene.position(hid)))
     return out
 
 
