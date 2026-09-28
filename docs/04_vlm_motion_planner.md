@@ -57,7 +57,7 @@ route 전체 홀드와 reach 예산만 주고 후보를 심판으로만 쓴다. 
     hand-foot match는 실제 등반 기술이고 한동안 허용했었다. 프롬프트가
     금지로 돌아섰고(2026-09-28) 코드와 이 문서를 거기 맞췄다. 되돌릴 거면
     아래 one-shot 절의 측정을 먼저 볼 것 --- 금지가 더 나빴다는 기록이 있다.
--   **step** --- 그 limb의 현재 홀드에서 target까지 거리. 손 1.6 m, 발 1.2 m.
+-   **step** --- 그 limb의 현재 홀드에서 target까지 거리. 손 1.6 m, 발 1.3 m.
 -   **hands don't climb down** --- 손은 지금 잡은 홀드보다 낮은 홀드로 가지
     않는다. 발은 갈 수 있다 --- 발을 내려 딛어 엉덩이를 벽에 붙이는 move가
     실제로 필요하고, 좁은 벽에서는 발을 내려 매칭을 풀어야 손이 올라간다.
@@ -72,8 +72,13 @@ route 전체 홀드와 reach 예산만 주고 후보를 심판으로만 쓴다. 
     (wall 8 step 5가 그 경우다) 반대로 2 cm 넘은 발을 거부해 위로 갈
     후보를 지웠다. 같은 버그의 양쪽이다. `anchors()`와 `ReachModel`의
     `torso`/`shoulder_half`/`hip_half`는 같이 지웠다.
--   **crossing** --- 반대쪽 같은 종류의 limb를 `cross_margin`(0.5 m) 넘게
-    지나치지 않는다.
+-   **crossing** --- **왼쪽 limb은 오른쪽 limb의 왼쪽에 있어야 한다**
+    (`cross_margin` 0 m). 같은 홀드를 공유하는 것은 crossing이 아니다(x가
+    같다). 2026-09-28에 0.5 m 허용에서 0으로 조였다 --- 0.5 m면 pose의
+    30%(101/335)가 좌우가 바뀐 상태였고, wall 8 step 6이 네 limb 모두
+    뒤바뀐 자세였다. `cross_margin`은 이제 tolerance knob이고 기술 스위치가
+    아니다. cross-through를 허용하려면 **꼬인 자세에서 빠져나올 계획을
+    세울 수 있는** planner가 필요한데, step-by-step에는 backtracking이 없다.
 -   **span** --- 이동 후 손-발 최대 거리가 `max_span`(2.4 m)을 넘지 않는다.
     step만으로는 발이 그대로인 채 손만 멀어지는 자세를 못 막는다.
 
@@ -81,11 +86,17 @@ route 전체 홀드와 reach 예산만 주고 후보를 심판으로만 쓴다. 
 아니다. **RL이 통과시킨 move를 generator가 거부하거나 그 반대가 반복되면
 여기부터 손본다.**
 
-**2026-09-28에 step과 crossing을 풀었다** (손 1.4→1.6 m, 발 1.0→1.2 m,
-crossing 0.25→0.5 m). 홀드가 드문 벽에서 **위로 가는 후보가 아예 없는
-pose**가 나왔기 때문이다 --- wall 8의 25개 pose 중 4개가 그랬고, 거기서
-계획은 옆으로/아래로 갈 수밖에 없다. 손 1.6 m는 "홀드에서 홀드까지"의
-거리이고 어깨에서 재는 reach가 아니라, 큰 move 하나에 해당한다.
+**2026-09-28에 step을 풀었다** (손 1.4→1.6 m, 발 1.0→1.3 m). 홀드가 드문
+벽에서 **위로 가는 후보가 아예 없는 pose**가 나왔기 때문이다 --- wall 8의
+25개 pose 중 4개가 그랬고, 거기서 계획은 옆으로/아래로 갈 수밖에 없다.
+손 1.6 m는 "홀드에서 홀드까지"의 거리이고 어깨에서 재는 reach가 아니라, 큰
+move 하나에 해당한다. 발의 1.3 m도 같은 이유다 --- crossing을 조인 뒤
+wall 13이 **1.25 m짜리 발 move 하나** 때문에 막혔다.
+
+crossing은 같은 날 반대로 조였다(위). 둘이 부딪히는 자리가 있다 --- 제한을
+풀면 위로 갈 후보가 생기고, crossing을 조이면 그 후보가 줄어든다. 그래서
+**규칙을 바꿀 때마다 벽이 여전히 풀리는지 BFS로 확인한다**
+(`selftest.check_solvable`). 지금은 20벽 전부 10\~15 move로 풀린다.
 
 추후 개선: - limb별 reach ellipse - torso orientation 반영 - joint limit
 기반 IK feasibility test - learned reachability model
@@ -430,6 +441,10 @@ candidate generator가 거르는 것은 **물리적으로 불가능한** move다
     climb down") 발은 막지 않는다 --- 필요한 move다. 프롬프트가 "위로 가거나
     다음 move를 만드는 move"를 우선하게만 한다.
 -   **같은 limb 연속 이동.**
+-   **꼬임을 푸는 순서.** crossing 자체는 후보 필터가 막지만, 옆으로 흐르는
+    홀드 줄을 올라가려면 **뒤에 있는 limb을 먼저** 보내야 한다는 것은
+    프롬프트만 말한다. 이걸 못 하면 dead end에 들어가고, step-by-step에는
+    backtracking이 없다.
 -   **직전 move 되돌리기** --- step-by-step에서는 **후보에서 뺀다.** 규칙은
     pose 하나만 보므로 방금 뗀 홀드를 아는 것은 planner뿐이다(`plan_steps`).
     바로 다음 move만 막고, 두 move 뒤에 돌아가는 것은 `Plan.backtracks`가
@@ -469,16 +484,24 @@ Unity 쪽에만 있다.
 
 `selftest`는 읽어들인 벽이 이쪽에서 필요한 성질을 갖췄는지 검사한다 ---
 id 유일성, start/top 존재, 벽 안쪽 좌표, start 아래에 홀드가 있는지, 그리고
-start에서 top까지 `MAX_REACH` 걸음으로 **이어지는지**(연결성). 발 홀드가
+start에서 top까지 `MAX_REACH` 걸음으로 **이어지는지**(연결성). 여기에
+`check_solvable`이 **현재 규칙으로** 초기 pose에서 양손 top까지 가는 수열이
+남아 있는지 BFS로 확인한다 --- 홀드 사이가 이어져 있다는 것과 규칙을 지키며
+갈 수 있다는 것은 다른 얘기이고, 규칙을 조일 때 깨지는 쪽은 후자다. 발 홀드가
 손 줄 옆에 붙은 뒤로 `hold_ids`가 높이순 한 줄이 아니라서 "연속 간격" 검사는
 의미를 잃었다. 잘못된 재익스포트는 여기서 걸린다.
 
 ### 현재 베이스라인
 
-greedy chooser(모델 없음) 기준 `/walls`의 20개 벽에서 **20/20 완등**
-(2026-09-28 측정, 양손 완등 기준, 평균 15.8 move --- step/crossing을 풀고
-stance 규칙을 바꾸기 전에는 21.6이었다). **두 모드 모두 20/20**이다 ---
-같은 규칙을 같은 순서로 따라가므로 당연하고, `selftest`가 둘 다 찍는다.
+greedy chooser(모델 없음) 기준 `/walls`의 20개 벽에서 **step-by-step 16/20,
+one-shot 19/20**, 완등한 벽의 평균 15.8 move (2026-09-28, 양손 완등 기준).
+
+**이 숫자는 greedy를 재는 값이고 벽을 재는 값이 아니다.** crossing을 0으로
+조인 뒤로 greedy는 몇 벽에서 dead end(후보 0개)에 들어간다 --- 눈앞의 이득이
+가장 큰 move만 고르므로 **꼬임을 푸는 순서**를 계획할 수 없기 때문이다. 같은
+벽 20개가 BFS로는 10\~15 move에 다 풀리므로(`check_solvable`) 막힌 것은
+규칙이 아니라 greedy다. 완등률 비교의 기준선으로 쓸 때 이걸 같이 적을 것.
+(허용 0.5 m 시절에는 두 모드 다 20/20, 평균 15.8이었다.)
 
 **greedy는 매 move마다 후보를 다시 계산한다.** one-shot의 VLM은 그걸 못 한다 ---
 요청이 한 번이니까. 그래서 이 숫자는 one-shot에 대해서는 reach model이 허용하는

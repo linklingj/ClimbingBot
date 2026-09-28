@@ -32,6 +32,7 @@ few moves in `history`.
 HARD RULES
 - Move exactly one limb, to a hold listed in `candidates` for that limb. Nothing else exists.
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
+- Never cross: the left hand stays left of the right hand, the left foot left of the right foot.
 - Finish with BOTH hands on `goal.top_hold_id`; the route is cleared when the second hand matches.
 
 CHOOSE LIKE A CLIMBER
@@ -61,6 +62,9 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
   1.0 m and still tear the body past 2.4 m because the feet stayed put. Bring a foot up first.
 - Hands never move down to a lower hold.
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
+- Never cross: the left hand stays left of (or on the same hold as) the right hand, and the left foot
+  stays left of the right foot. Going up a line of holds that drifts sideways means ordering the
+  moves so the trailing limb goes first.
 - Finish with BOTH hands on `goal.top_hold_id`. Plan the last two moves together: feet high enough
   that the second hand can follow.
 
