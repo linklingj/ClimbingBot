@@ -1,8 +1,8 @@
-"""Offline check of the planner loop: PYTHONPATH=src python -m vlm.selftest
+"""Offline check of both planners: PYTHONPATH=src python -m vlm.selftest
 
-Covers the exported walls, the reach filter, the validator and the plan loop with the greedy
-chooser. The Gemini path is one method behind the same interface, so what is left untested here is
-the API call. The walls themselves are Unity's -- these checks assert what this side needs from
+Covers the exported walls, the reach filter, the validator, and both the step-by-step loop and the
+one-shot replay with the greedy chooser. The Gemini path is one method behind the same interface,
+so what is left untested here is the API call. The walls themselves are Unity's -- these checks assert what this side needs from
 them, which is how a bad re-export gets caught.
 """
 from __future__ import annotations
@@ -11,7 +11,8 @@ import math
 
 from .candidates import (LIMBS, ReachModel, anchors, blocked_holds, candidates,
                          initial_pose, rejection)
-from .planner import SYSTEM, build_payload, plan, plan_schema, validate
+from .planner import (SYSTEM_ONESHOT, SYSTEM_STEPS, build_payload, move_schema,
+                      plan_oneshot, plan_schema, plan_steps, step_payload, validate)
 from .providers import ALIASES, GEMINI, GPT, GreedyChooser, chooser_for, strict_schema
 from .render import render
 from .scene import FEET, HANDS, MAX_REACH, Scene, wall, wall_paths
@@ -134,7 +135,7 @@ def check_validator():
         "the enums must survive the dialect swap"
 
     # The prompt states max_span as a number, so the number has to be the one the referee uses.
-    assert f"{ReachModel().max_span} m" in SYSTEM, "the metres in the prompt are not max_span"
+    assert f"{ReachModel().max_span} m" in SYSTEM_ONESHOT, "the metres in the prompt are not max_span"
     payload = build_payload(scene, pose, ReachModel())
     assert payload["limits"] == {"hand_step": ReachModel().hand_step,
                                  "foot_step": ReachModel().foot_step,
@@ -145,14 +146,14 @@ def check_validator():
     assert "candidates" not in payload and "history" not in payload, "the model gets neither now"
 
 
-def check_plan():
+def check_oneshot():
     """The greedy baseline, through the same one-shot interface the VLM uses: one request, the whole
     sequence, replayed. Greedy re-derives candidates inside its own rollout, so every move it writes
     must survive the replay -- an invalid one means the two have drifted apart."""
     solved = 0
     for seed in WALLS:
         scene = wall(seed)
-        result = plan(scene, GreedyChooser(scene), with_image=False, max_moves=60)
+        result = plan_oneshot(scene, GreedyChooser(scene), with_image=False, max_moves=60)
         assert result.valid_move_rate == 1.0, \
             f"wall {seed}: greedy wrote a move its own rollout could not replay: {result.stopped}"
         assert result.proposed == result.examined, "greedy must not write past the top"
@@ -173,6 +174,55 @@ def check_plan():
     # reach was usually the one the other foot was already on.
     assert solved >= 18, f"greedy baseline only solved {solved}/{len(WALLS)}"
     print(f"  greedy baseline reached the top on {solved}/{len(WALLS)} walls")
+
+
+def check_steps():
+    """The step-by-step planner, greedy standing in for the model: one request per move, candidates
+    in the payload, re-planned from the new pose. The offered candidates are the only thing greedy
+    can answer with, so a rejected answer here means the prompt's schema and the referee disagree."""
+    solved = 0
+    for seed in WALLS:
+        scene = wall(seed)
+        result = plan_steps(scene, GreedyChooser(scene), with_image=False, max_moves=60)
+        assert result.mode == "steps" and result.requests == len(result.moves), \
+            f"wall {seed}: {result.invalid} answers rejected -- greedy must only offer valid moves"
+        assert result.invalid == 0 and result.valid_move_rate == 1.0
+        assert not any(move.fell_back for move in result.moves), "the fallback must not be needed"
+        assert result.request_png is None, "the step planner renders per move, not once"
+        for move in result.moves:
+            assert len(set(move.pose.values())) >= 3, f"all four limbs on two holds: {move.pose}"
+            targets = move.targets()["targets"]
+            assert len(targets) == 4 and sum(t["move"] for t in targets) == 1
+        solved += result.reached_top
+        if result.reached_top:
+            assert all(result.moves[-1].pose[hand] == scene.route.top_hold_id for hand in HANDS)
+        else:
+            print(f"  wall {seed}: {result.stopped}")
+    assert solved >= 18, f"greedy through the loop only solved {solved}/{len(WALLS)}"
+    print(f"  greedy through the step-by-step loop reached the top on {solved}/{len(WALLS)} walls")
+
+
+def check_step_prompt():
+    """The step-by-step payload and schema: candidates are both the offer and the enum."""
+    scene = wall(1)
+    pose = initial_pose(scene)
+    cands = candidates(scene, pose)
+
+    schema = move_schema(cands)
+    assert schema["properties"]["moving_limb"]["enum"] == sorted(cands)
+    every = {str(i) for ids in cands.values() for i in ids}
+    assert set(schema["properties"]["target_hold_id"]["enum"]) == every, "the enum is the offer"
+    strict = strict_schema(schema)
+    assert "propertyOrdering" not in strict and strict["additionalProperties"] is False
+    assert strict["properties"] == schema["properties"], "the enums must survive the dialect swap"
+
+    payload = step_payload(scene, pose, cands, error="nope")
+    assert payload["goal"]["top_hold_id"] == scene.route.top_hold_id
+    assert payload["candidates"] == {limb: list(ids) for limb, ids in cands.items()}
+    assert payload["history"] == [] and payload["previous_answer_rejected"] == "nope"
+    # Both prompts state the same finish, because both planners referee the same one.
+    assert "BOTH hands" in SYSTEM_STEPS and "BOTH hands" in SYSTEM_ONESHOT
+    assert "candidates" in SYSTEM_STEPS, "the step prompt has to point at the offer it gets"
 
 
 def check_aliases():
@@ -209,13 +259,13 @@ def check_replay():
     a sequence with an unavailable move must stop there rather than execute it."""
     scene = wall(0)
     route = list(scene.route.hold_ids)
-    greedy = plan(scene, GreedyChooser(scene), with_image=False)
+    greedy = plan_oneshot(scene, GreedyChooser(scene), with_image=False)
     assert greedy.reached_top
     canned = [{"reason": m.reason, "moving_limb": m.moving_limb,
                "target_hold_id": str(m.target_hold_id)} for m in greedy.moves]
 
     chooser = _Canned(canned, route)
-    result = plan(scene, chooser, with_image=False)
+    result = plan_oneshot(scene, chooser, with_image=False)
     assert chooser.calls == 1, "one request for the whole route"
     assert result.reached_top and result.valid_move_rate == 1.0, result.stopped
     assert [m.target_hold_id for m in result.moves] == [m.target_hold_id for m in greedy.moves]
@@ -223,19 +273,19 @@ def check_replay():
     # Out of reach: nothing retries and nothing falls back -- the plan stops, keeping the prefix.
     far = max(scene.holds, key=lambda h: math.dist(scene.position(route[0]), h.position))
     bad = canned[:2] + [{"reason": "", "moving_limb": "left_hand", "target_hold_id": str(far.id)}]
-    result = plan(scene, _Canned(bad, route), with_image=False)
+    result = plan_oneshot(scene, _Canned(bad, route), with_image=False)
     assert not result.reached_top and len(result.moves) == 2 and result.examined == 3
     assert result.valid_move_rate == 2 / 3
     assert result.stopped.startswith("move 3 unusable"), result.stopped
 
     # A sequence that just runs out short of the top says so rather than claiming a stop reason.
-    result = plan(scene, _Canned(canned[:2], route), with_image=False)
+    result = plan_oneshot(scene, _Canned(canned[:2], route), with_image=False)
     assert not result.reached_top and "short of the top" in result.stopped
 
     # The image is rendered once and kept, so the caller can save exactly what was sent.
-    result = plan(scene, _Canned(canned, route), with_image=True)
+    result = plan_oneshot(scene, _Canned(canned, route), with_image=True)
     assert result.request_png and result.request_png.startswith(b"\x89PNG")
-    assert plan(scene, _Canned(canned, route), with_image=False).request_png is None
+    assert plan_oneshot(scene, _Canned(canned, route), with_image=False).request_png is None
 
 
 def check_skip_filters():
@@ -248,15 +298,15 @@ def check_skip_filters():
                                    "body": initial_pose(scene)},
                               {"properties": {"moves": {"maxItems": 60}}}, None)["moves"]
 
-    strict = plan(scene, _Canned(written, route), with_image=False)
+    strict = plan_oneshot(scene, _Canned(written, route), with_image=False)
     assert strict.stopped.startswith("move ") and not strict.forced, strict.stopped
 
-    loose = plan(scene, _Canned(written, route), with_image=False, skip_filters=True)
+    loose = plan_oneshot(scene, _Canned(written, route), with_image=False, skip_filters=True)
     assert len(loose.moves) == len(written), "every move the model wrote must run"
     assert loose.forced, "the moves the rules would have refused must say so"
     # The flags are honest: replaying what it executed with the referee back on stops where the
     # strict run stopped.
-    again = plan(scene, _Canned([{"reason": "", "moving_limb": m.moving_limb,
+    again = plan_oneshot(scene, _Canned([{"reason": "", "moving_limb": m.moving_limb,
                                   "target_hold_id": str(m.target_hold_id)} for m in loose.moves],
                                 route), with_image=False)
     assert len(again.moves) == len(strict.moves)
@@ -291,7 +341,8 @@ def check_render():
 
 
 if __name__ == "__main__":
-    for check in (check_scene, check_candidates, check_validator, check_aliases,
-                  check_plan, check_replay, check_skip_filters, check_render):
+    for check in (check_scene, check_candidates, check_validator, check_step_prompt,
+                  check_aliases, check_steps, check_oneshot, check_replay,
+                  check_skip_filters, check_render):
         check()
         print(f"ok  {check.__name__}")

@@ -212,8 +212,11 @@ controller를 학습한다. 실제 루트는 추론 단계에서 target pose로 
 -   candidate generator 구현
 -   VLM 입력 JSON schema 정의
 -   structured output 정의
--   **요청 한 번에 전체 move 시퀀스 생성** (docs/04 "Planning 전략")
--   시퀀스 재생 + move별 검증, 첫 불가능 move에서 중단
+-   **planning 전략 두 가지를 나란히 둔다** (docs/04 "Planning 전략")
+    --- 기본은 move 하나씩 요청하고 pose를 갱신해 재계획하는 루프,
+    `--oneshot`은 요청 한 번에 전체 시퀀스를 받아 재생한다
+-   move별 검증. 루프는 재시도·greedy fallback, one-shot은 첫 불가능
+    move에서 중단
 -   VLM → RL 연결, 실행이 계획과 어긋나면 그 pose에서 다시 계획
 
 ### Phase 3 --- Perception

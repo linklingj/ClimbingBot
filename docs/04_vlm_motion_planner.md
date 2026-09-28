@@ -15,10 +15,11 @@ VLM
     "무엇을 선택할 것인가?"
 ```
 
-Candidate Generator는 물리적으로 명백히 불가능한 move를 제거한다. **단
-프롬프트에는 후보 목록을 넣지 않는다** --- VLM은 route 전체 홀드와 reach
-예산만 받고, candidate set은 출력을 **검증**하는 쪽에서만 쓴다. 아래
-"Planning 전략" 참고.
+Candidate Generator는 물리적으로 명백히 불가능한 move를 제거한다. 후보
+목록을 **프롬프트에 넣을지는 planning 전략에 따라 갈린다** --- 기본
+(step-by-step)은 그 pose의 후보를 프롬프트와 schema enum에 넣고, one-shot은
+route 전체 홀드와 reach 예산만 주고 후보를 심판으로만 쓴다. 어느 쪽이든
+출력 **검증**은 같은 후보 규칙으로 한다. 아래 "Planning 전략" 참고.
 
 ## Candidate Generator
 
@@ -105,15 +106,21 @@ VLM에는 두 종류의 정보를 함께 제공한다.
 }
 ```
 
-`candidates`도 `history`도 주지 않는다. 요청이 한 번뿐이라 직전 move라는
-것이 없고 --- 모델이 history를 스스로 쓰는 중이다 --- 무엇이 닿는지는
-`limits`와 홀드 좌표로 모델이 직접 따져야 한다. **`limits`는 매 move마다
-그 limb이 그 시점에 있는 홀드부터 재는 거리다.** 시퀀스 중간에 초기화되지
-않는다는 것을 프롬프트가 못박는다.
+위는 one-shot(`--oneshot`)의 payload다. `candidates`도 `history`도 주지
+않는다 --- 요청이 한 번뿐이라 직전 move라는 것이 없고(모델이 history를 스스로
+쓰는 중이다), 무엇이 닿는지는 `limits`와 홀드 좌표로 모델이 직접 따져야 한다.
+**`limits`는 매 move마다 그 limb이 그 시점에 있는 홀드부터 재는 거리다.**
+시퀀스 중간에 초기화되지 않는다는 것을 프롬프트가 못박는다.
+
+**step-by-step(기본)의 payload는 다르다**(`planner.step_payload`). 한 move만
+고르면 되므로 `limits` 대신 그 pose의 `candidates`를 주고, 직전 세 move를
+`history`로 붙인다 --- 요청마다 세계가 새로 시작하므로 이게 없으면 모델은
+자기가 발 하나를 왔다 갔다 하고 있다는 것을 알 수가 없다. 거절당한 답을 다시
+물을 때는 `previous_answer_rejected`에 사유가 들어간다.
 
 ## Structured Output
 
-출력은 move 배열 하나다.
+one-shot의 출력은 move 배열 하나다.
 
 ``` json
 {
@@ -127,6 +134,11 @@ VLM에는 두 종류의 정보를 함께 제공한다.
 
 출력 schema에서 limb enum과 **route 전체** hold ID를 강제한다 --- 좁힐
 candidate set이 프롬프트에 없으므로 enum은 route의 모든 홀드다.
+
+step-by-step은 move 객체 **하나**를 받고(`planner.move_schema`), enum이 그
+pose의 후보다 --- 후보가 있는 limb와 그 limb들의 후보 홀드 id뿐이다. schema가
+limb와 id를 각각 강제할 뿐 둘의 짝은 강제하지 못하므로 어느 쪽이든
+`validate()`가 그대로 필요하다.
 
 ## Pose State
 
@@ -143,8 +155,36 @@ candidate set이 프롬프트에 없으므로 enum은 route의 모든 홀드다.
 
 ## Planning 전략
 
-**요청 한 번에 전체 시퀀스를 받는다.** 초기 pose에서 top까지 move를 순서대로
-모두 쓰게 하고, planner는 그것을 재생한다.
+**전략이 두 가지 있고 둘 다 유지한다.** 어느 쪽이 나은지 같은 모델로 재 본
+기록이 아직 없다(아래 "one-shot 수치와 비교되지 않은 것"). 기본은
+step-by-step이고 `--oneshot`이 one-shot이다.
+
+### step-by-step (기본, `plan_steps`)
+
+move 하나씩 요청하고, pose를 갱신해 후보를 다시 만든다.
+
+``` text
+Pose + Route + candidates(pose) + history
+   ↓
+VLM  (move 1개당 요청 1회)
+   ↓
+검증 --- 실패하면 사유를 붙여 재요청 (최대 2회), 그래도 실패하면 greedy fallback
+   ↓
+pose 갱신 → 위로 (양손이 top / 후보 없음 / pose 순환 / max_moves 까지)
+   ↓
+Target Pose Sequence → RL Execution
+```
+
+계획이 물리와 부딪혀도 살아남는 쪽이다 --- 매 move가 **그 move를 발행하는
+pose**를 보고 선택되고, 후보 목록이 프롬프트에 있으니 닿지 않는 홀드를 쓸 일이
+애초에 적다. 대신 요청 수가 move 수만큼이고(재시도 포함), 모델이 한 번에 보는
+것은 지금 상태 하나라 계획 전체의 모양을 스스로 볼 수 없다. 그래서 planner가
+**pose 순환**을 대신 본다 --- 같은 pose를 세 번째로 지나가면 루프로 보고 끊는다
+(두 번은 허용한다, 등반자도 move를 물릴 수 있다).
+
+### one-shot (`--oneshot`, `plan_oneshot`)
+
+초기 pose에서 top까지 move를 순서대로 모두 쓰게 하고, planner는 그것을 재생한다.
 
 ``` text
 Initial Pose + Route + limits
@@ -153,7 +193,7 @@ VLM  (요청 1회)
    ↓
 Move Sequence
    ↓
-재생 --- move마다 그 시점 pose에서 Candidate Generation → 검증
+재생 --- move마다 그 시점 pose에서 검증
    ↓
 첫 불가능 move에서 중단 (재시도·fallback 없음)
    ↓
@@ -167,15 +207,14 @@ Candidate Generator는 프롬프트에서 빠지고 **심판으로만** 남는�
 **첫 불가능 move에서 멈추는 이유**는 거기가 RL 컨트롤러도 멈추는 지점이기
 때문이다. 그 뒤 move들은 일어나지 않은 pose를 전제로 쓰여 있어 의미가 없다.
 그래서 `Plan.moves`는 **실행 가능한 prefix**이고, `valid_move_rate`는 재생한
-move 중 그 prefix의 비율이다.
-
-이전 판은 move 하나씩 요청하고 pose를 갱신해 후보를 다시 만드는
-re-planning 루프였다. 재시도·greedy fallback·pose 순환 감지가 거기 붙어
-있었고, 전부 같이 사라졌다.
+move 중 그 prefix의 비율이다. 재시도할 상대가 없으니 재시도도, fallback도,
+pose 순환 감지도 없다(루프가 없으므로 순환할 것도 없고, 같은 pose를 다시
+지나가는 시퀀스는 `backtracks`가 잡는다).
 
 ## 검증 규칙
 
-시퀀스의 move마다, **그 move가 발행되는 시점의 pose를 기준으로** 검사한다.
+**두 모드가 같은 `validate()`를 쓴다.** move마다 **그 move가 발행되는 시점의
+pose를 기준으로** 검사한다.
 
 -   output schema가 유효한지
 -   target hold가 route에 포함되는지
@@ -199,9 +238,11 @@ validator가 같은 함수를 읽으므로 **실제로 막은 규칙의 이름�
 동안 wall 7의 2 mm crossing 초과가 거리 문제로 보였고, reach 한계를 100배로
 늘려도 안 풀리는 이유를 알 수 없었다.
 
-### 제약 전부 끄기 (`--skip-filters`)
+### 제약 전부 끄기 (`--oneshot --skip-filters`)
 
-`plan(skip_filters=True)` / `--skip-filters`는 **재생에서 심판을 끈다.**
+`plan_oneshot(skip_filters=True)` / `--skip-filters`는 **재생에서 심판을 끈다.
+one-shot 전용이다** --- step-by-step에서는 후보 목록이 곧 모델이 고를 선택지라,
+심판을 끄면 고를 것이 없어진다(CLI가 거부한다).
 route 소속, 점유(세 홀드 바닥), reach, 자세 규칙 전부 통과시킨다.
 
 끄지 않는 것은 재생이 돌아가기 위한 둘뿐이다 --- `moving_limb`이 실제 limb인지,
@@ -218,10 +259,14 @@ body를 놓치는지 보려는 스위치다.
 
 ## 평가
 
--   `valid_move_rate` --- 재생한 move 중 실행 가능했던 비율. 시퀀스가
-    어긋나기까지 모델이 body를 몇 move나 추적했는지를 재는 값이다.
--   `proposed` / `examined` / `executed` --- 모델이 쓴 move 수 / 재생한 수 /
-    실행된 수. `proposed > examined`는 완등 후에도 계속 썼다는 뜻이다.
+-   `valid_move_rate` --- **모드마다 의미가 다르다.** one-shot은 재생한 move 중
+    실행 가능했던 비율(시퀀스가 어긋나기까지 모델이 body를 몇 move나 추적했는지),
+    step-by-step은 요청 중 유효한 답이 온 비율이다. `Plan.mode`가 어느 쪽인지
+    말해 주고 `plan.json`에도 들어간다. **모드를 섞어 이 숫자를 비교하지 말 것.**
+-   `proposed` / `examined` / `executed` (one-shot) --- 모델이 쓴 move 수 /
+    재생한 수 / 실행된 수. `proposed > examined`는 완등 후에도 계속 썼다는 뜻이다.
+-   `requests` / `invalid` (step-by-step) --- 보낸 요청 수(재시도·fallback 포함) /
+    거절된 답 수. `Move.retries`와 `Move.fell_back`이 move별로 남는다.
 -   Top hold까지 계획 성공률 (`reached_top`)
 -   `forced` --- 규칙을 꺼 준 덕분에 통과한 move 수. 0이 아니면 그 plan의
     완등률은 아무 의미가 없다.
@@ -254,7 +299,7 @@ VLM의 시각적 reasoning이 좋아도 실제 물리 feasibility를 완전히
   `candidates.py`   Candidate Generator, `ReachModel`, `initial_pose`
   `render.py`       VLM에 주는 벽 이미지(홀드 id, 후보 링, body overlay)
   `providers.py`    **모델 교체 지점.** `MoveChooser` + Gemini/OpenAI + greedy + `chooser_for`
-  `planner.py`      프롬프트/스키마/검증/시퀀스 재생
+  `planner.py`      프롬프트/스키마/검증 + `plan_steps`(기본)와 `plan_oneshot`
   `selftest.py`     오프라인 검증 (`python -m vlm.selftest`)
 
 ```
@@ -263,9 +308,13 @@ PYTHONPATH=src python -m vlm --wall 3 --model gpt        # OpenAI (.env의 OPENA
 PYTHONPATH=src python -m vlm --wall 3 --model gpt-6-luna # 정확한 모델 이름도 그대로
 PYTHONPATH=src python -m vlm --wall 3 --offline          # 키 없이 greedy 베이스라인
 PYTHONPATH=src python -m vlm --wall 3 --out out/wall3    # 산출물 저장 (아래)
-PYTHONPATH=src python -m vlm --wall 3 --skip-filters     # 심판 끄고 시퀀스 전체 재생 (측정 아님)
+PYTHONPATH=src python -m vlm --wall 3 --oneshot          # 요청 한 번에 전체 시퀀스
+PYTHONPATH=src python -m vlm --wall 3 --oneshot --skip-filters  # 심판 끄고 전체 재생 (측정 아님)
 PYTHONPATH=src python -m vlm --scene path/to/scene.json  # 임의의 Scene JSON
 ```
+
+**기본은 step-by-step이다.** `--oneshot`을 붙이면 요청 한 번에 전체 시퀀스를
+받아 재생한다. `--skip-filters`는 `--oneshot`과만 쓸 수 있다.
 
 `--model`은 짧은 별칭 둘을 받는다 --- **`gemini` → `gemini-3.8-flash`,
 `gpt` → `gpt-6-sol`** (`providers.ALIASES`). 그 외 이름은 그대로 넘어가고,
@@ -278,10 +327,11 @@ provider는 이름으로 고른다 (`gemini*` → Gemini, 그 외 → OpenAI). �
   ---------------- --------------------------------------------------------
   `scene.json`     계획에 쓴 Scene JSON
   `plan.json`      `Plan.to_dict()` --- 지표 + move별 docs/07 target pose
-  `request.png`    **모델에게 실제로 보낸 이미지** (후보 링 없음)
+  `request.png`    **모델에게 실제로 보낸 이미지** (후보 링 없음). `--oneshot`만
   `stepNN.png`     move마다 한 장. `step00`이 초기 pose, `stepNN`이 move NN
-                   직후 pose. 이쪽은 그 pose의 후보 링을 그려 준다 ---
-                   다음 move가 왜 가능/불가능했는지가 여기서 보인다.
+                   직후 pose. 그 pose의 후보 링을 그려 준다 --- 다음 move가 왜
+                   가능/불가능했는지가 여기서 보인다. step-by-step에서는 이것이
+                   그 move에 실제로 보낸 이미지와 같다.
 
 ### 모델 교체
 
@@ -293,12 +343,16 @@ def choose(self, system: str, payload: dict, schema: dict, image_png: bytes | No
 
 `GeminiChooser`(google-genai)와 `OpenAIChooser`(chat completions, strict
 json_schema)가 들어 있다. 다른 모델은 같은 프로토콜을 구현한 클래스를
-`providers.py`에 하나 더 두고 `plan(scene, chooser)`에 넘기면 된다. 나머지
-코드는 어떤 모델이 돌았는지 모른다.
+`providers.py`에 하나 더 두고 `plan_steps(scene, chooser)` 또는
+`plan_oneshot(scene, chooser)`에 넘기면 된다. 나머지 코드는 어떤 모델이 돌았는지
+모른다. **`schema`를 보고 무엇을 답할지 정하는 것은 chooser의 몫이다** ---
+`GreedyChooser`가 그렇게 두 모드를 다 답한다(`moves` 배열이 스키마에 있으면
+시퀀스, 없으면 move 하나).
 
 ### Structured output
 
-`plan_schema(scene, max_moves)`가 move 배열을 강제한다. `moving_limb`는 네
+`plan_schema(scene, max_moves)`가 one-shot의 move 배열을 강제한다
+(step-by-step은 `move_schema(cands)`, 위 "Structured Output"). `moving_limb`는 네
 limb의 enum, `target_hold_id`는 **route 전체** hold id의 enum이다 --- 좁힐
 candidate set이 없으니 그렇게 된다. hold id가 string인 것은 Gemini가 받는
 JSON schema subset이 문자열 enum만 열거하기 때문이다. 스키마는 limb와 id를
@@ -314,23 +368,39 @@ property가 `required`여야 하므로 `strict_schema()`가 같은 스키마를 
 `additionalProperties: false`를 붙인다. 배열 안 move 객체까지 내려가야 해서
 **재귀**다. enum은 그대로 간다.
 
-### 재생
-
-요청은 한 번이고, 그 뒤는 planner가 시퀀스를 재생한다.
+### 두 모드가 공유하는 것
 
 -   **종료 조건은 양손이 top 홀드에 있는 것이다**(docs/07). 한 손이
     올라가도 계속 가고, 두 번째 손이 매칭해야 `reached_top`이 된다 ---
-    Unity의 `IsToppedOut`이 그 상태이기 때문이다. 그 뒤에 모델이 더 쓴
-    move는 무시한다.
+    Unity의 `IsToppedOut`이 그 상태이기 때문이다.
+-   `validate()`, `Move`, `Plan`, 그리고 각 move의 docs/07 target pose(네 limb +
+    `move` 플래그) 직렬화. RL 연결은 이 JSON을 Unity에 넘기는 것부터다.
+-   `GreedyChooser`. 오프라인 베이스라인이면서 step-by-step의 fallback이다.
+
+### 재생 (one-shot)
+
+요청은 한 번이고, 그 뒤는 planner가 시퀀스를 재생한다.
+
+-   완등 뒤에 모델이 더 쓴 move는 무시한다.
 -   **불가능한 move가 나오면 거기서 끝난다.** 재시도도 greedy fallback도
     없다 --- 재요청할 상대가 없고, 그 뒤 move들은 일어나지 않은 pose를
     전제로 쓰여 있다. `stopped`에 몇 번째 move가 왜 막혔는지 남는다.
     멈춘 시퀀스를 끝까지 보고 싶으면 `--skip-filters`다
     (위 "제약 전부 끄기").
--   pose 순환 감지는 없앴다. 루프가 없으니 순환할 것도 없고, 같은 pose를
+-   pose 순환 감지는 없다. 루프가 없으니 순환할 것도 없고, 같은 pose를
     다시 지나가는 시퀀스는 `backtracks`로 잡힌다.
--   각 move는 docs/07의 target pose(네 limb + `move` 플래그)로 직렬화된다.
-    RL 연결은 이 JSON을 Unity에 넘기는 것부터다.
+
+### 루프 (step-by-step, 기본)
+
+-   요청은 move마다 하나. 거절된 답은 사유(`previous_answer_rejected`)를 붙여
+    다시 묻고, `max_retries`(2회) 뒤에는 `GreedyChooser`가 마지막으로 고른다
+    (docs/07 "VLM invalid output"). `Move.retries` / `Move.fell_back`에 남는다.
+-   프롬프트의 후보 목록과 schema enum이 그 pose의 후보라, 모델이 닿지 않는
+    홀드를 고르기 어렵다. 그래도 schema는 limb와 hold를 각각만 강제하므로
+    `validate()`는 그대로 돈다.
+-   **같은 pose를 세 번째로 지나가면 끊는다.** 모델은 한 번에 상태 하나만 보므로
+    자기가 순환하는 것을 볼 수 없고, planner만 볼 수 있다.
+-   후보가 하나도 없는 pose에 도달하면 거기서 끝난다(`no reachable candidate`).
 
 ### 프롬프트에만 있고 강제하지 않는 것
 
@@ -379,12 +449,15 @@ start에서 top까지 `MAX_REACH` 걸음으로 **이어지는지**(연결성). �
 ### 현재 베이스라인
 
 greedy chooser(모델 없음) 기준 `/walls`의 20개 벽에서 **20/20 완등**
-(2026-09-28 측정, 양손 완등 기준, 평균 21.6 move).
+(2026-09-28 측정, 양손 완등 기준, 평균 21.6 move). **두 모드 모두 20/20**이다 ---
+같은 규칙을 같은 순서로 따라가므로 당연하고, `selftest`가 둘 다 찍는다.
 
-**greedy는 자기 rollout 안에서 매 move마다 후보를 다시 계산한다.** VLM은 그걸
-못 한다 --- 요청이 한 번이니까. 그래서 이 숫자는 reach model이 허용하는
-**상한**이지 같은 조건의 상대가 아니다. 비교해야 할 것은 완등률보다
+**greedy는 매 move마다 후보를 다시 계산한다.** one-shot의 VLM은 그걸 못 한다 ---
+요청이 한 번이니까. 그래서 이 숫자는 one-shot에 대해서는 reach model이 허용하는
+**상한**이지 같은 조건의 상대가 아니고, 비교해야 할 것은 완등률보다
 `valid_move_rate`, 즉 시퀀스가 어긋나기까지 몇 move를 갔는지다.
+step-by-step의 VLM은 greedy와 같은 정보를 받으므로 그쪽은 완등률을 직접 비교할
+수 있다 --- 차이는 후보 중 무엇을 고르는지뿐이다.
 
 매칭이 이 숫자를 만든다. 같은 greedy 실행에서
 
@@ -417,12 +490,13 @@ greedy가 pose의 22%를 네 limb-두 홀드로 만든다. 20/20은 그대로이
 **그 두 숫자는 버린다.** 벽을 다시 내보내면 `selftest` 출력으로 이 절을
 갱신할 것.
 
-### one-shot으로 바꾼 근거와 현재 수치
+### one-shot 수치와 비교되지 않은 것
 
-move 하나씩 재계획하던 루프를 걷어내고 요청 한 번으로 바꿨다. 없어진 것:
-후보 목록(프롬프트), `history`, 재시도, greedy fallback, pose 순환 감지.
+one-shot을 한동안 유일한 전략으로 두었다가, step-by-step 루프를 기본으로
+되살렸다(2026-09-28). **둘 다 남긴 이유는 어느 쪽이 나은지 모르기 때문이다** ---
+아래 0/5는 greedy와의 비교일 뿐이고, 같은 모델로 루프를 돌린 수치가 없다.
 
-**gpt-6-sol, wall 0\~4 (2026-09-28).** 완등 0/5. 시퀀스는 2\~6 move 버티다
+**gpt-6-sol, one-shot, wall 0\~4 (2026-09-28).** 완등 0/5. 시퀀스는 2\~6 move 버티다
 어긋나고, 실패는 전부 reach 초과였다 --- 모델이 자기가 쓰고 있는 body를
 끝까지 추적하지 못한다. `limits`가 "그 시점 그 limb의 홀드에서" 재는
 거리라는 것을 프롬프트가 못박지만, 여덟 move쯤 가면 놓친다.
@@ -434,6 +508,11 @@ move 하나씩 재계획하던 루프를 걷어내고 요청 한 번으로 바�
 **금지 상태의 VLM 수치는 아직 다시 재지 않았다.** 위 "두 벽이 move 1에서
 실패"가 여전히 유효한지가 다음에 확인할 것이다.
 
-**아직 재지 않은 것:** 같은 모델로 돌린 re-planning 루프와의 직접 비교.
-위 0/5는 greedy(20/20)와의 비교일 뿐이고, 루프 쪽을 모델로 돌린 수치는
-없다. 완등률만 보면 one-shot이 유리하다고 말할 근거는 이 저장소에 없다.
+**아직 재지 않은 것:** 같은 모델로 돌린 step-by-step 루프. 위 실패가 전부
+"자기 body를 끝까지 추적하지 못한다"는 한 가지 원인이었으므로, 매 move마다 pose와
+후보를 다시 주는 쪽이 이 실패 모드를 없애 줄 것으로 예상하지만 **예상일 뿐이다.**
+대신 요청 수가 move 수만큼 들고, 모델이 계획 전체를 보지 못한다는 반대쪽 비용이
+있다. 다음에 할 일은 같은 벽 다섯 개를 두 모드로 한 번씩 돌려
+(`--oneshot` 유/무) `valid_move_rate`와 완등률을 나란히 적는 것이다.
+그때까지 **어느 쪽도 지우지 않는다.** 호출 수는 CLAUDE.md의 API 호출 주의를
+따른다.

@@ -29,8 +29,10 @@ src/vlm/                    candidate generator, VLM planner, 합성 Scene JSON
 ```
 
 끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini/OpenAI structured
-output, 요청 한 번에 전체 시퀀스를 받아 재생하는 planner, 오프라인 selftest.
-다음: valid move rate / 완등률을 greedy 베이스라인과 비교.
+output, planner 두 가지(기본은 move마다 재계획하는 루프, `--oneshot`은 요청
+한 번에 전체 시퀀스), 오프라인 selftest.
+다음: 같은 벽을 두 모드로 돌려 valid move rate / 완등률을 서로, 그리고 greedy
+베이스라인과 비교.
 
 **학습 실행**
 
@@ -46,7 +48,8 @@ mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
 
 ```
 cp .env.example .env                        # GEMINI_API_KEY / OPENAI_API_KEY
-PYTHONPATH=src python -m vlm --wall 3 --out out/wall3   # gemini-3.8-flash
+PYTHONPATH=src python -m vlm --wall 3 --out out/wall3   # gemini-3.8-flash, move마다 재계획
+PYTHONPATH=src python -m vlm --wall 3 --oneshot         # 요청 한 번에 전체 시퀀스
 PYTHONPATH=src python -m vlm --wall 3 --model gpt       # gpt-6-sol
 PYTHONPATH=src python -m vlm --wall 3 --offline         # 키 없이 greedy 베이스라인
 PYTHONPATH=src python -m vlm.selftest                   # 모델 없이 도는 검증
