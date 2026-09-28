@@ -14,6 +14,13 @@ from typing import Protocol
 from dotenv import load_dotenv
 
 
+# Short names for the current default on each side, so the CLI takes `--model gpt` / `--model
+# gemini`. Anything else is passed through to the provider untouched.
+GEMINI = "gemini-3.8-flash"
+GPT = "gpt-6-sol"
+ALIASES = {"gemini": GEMINI, "gpt": GPT}
+
+
 class MoveChooser(Protocol):
     name: str
 
@@ -25,7 +32,7 @@ class GeminiChooser:
     """Structured output through google-genai: response_schema forces the enums, so a malformed
     move can only come from the schema being satisfied and the choice still being wrong."""
 
-    def __init__(self, model: str = "gemini-2.5-flash", api_key: str | None = None, temperature: float = 0.4):
+    def __init__(self, model: str = GEMINI, api_key: str | None = None, temperature: float = 0.4):
         from google import genai  # imported late: the offline chooser must not need the SDK
 
         load_dotenv()
@@ -59,7 +66,7 @@ class GeminiChooser:
 class OpenAIChooser:
     """Same move, through OpenAI structured outputs (`strict` json_schema, so the enums bind)."""
 
-    def __init__(self, model: str = "gpt-6-luna", api_key: str | None = None, temperature: float | None = None):
+    def __init__(self, model: str = GPT, api_key: str | None = None, temperature: float | None = None):
         from openai import OpenAI  # imported late, same as the Gemini client
 
         load_dotenv()
@@ -88,43 +95,78 @@ class OpenAIChooser:
         return json.loads(response.choices[0].message.content)
 
 
+# propertyOrdering is Gemini's; strict mode rejects the array length keywords outright.
+_DROP = ("propertyOrdering", "maxItems", "minItems")
+
+
 def strict_schema(schema: dict) -> dict:
-    """The planner's schema in OpenAI's strict dialect: no vendor keywords, closed objects."""
-    out = {k: v for k, v in schema.items() if k != "propertyOrdering"}
-    out["additionalProperties"] = False
-    out["required"] = list(schema["properties"])  # strict mode requires every property
+    """The planner's schema in OpenAI's strict dialect: no vendor keywords, closed objects.
+
+    Recursive, because the sequence schema nests the move object inside an array.
+    """
+    out = {k: v for k, v in schema.items() if k not in _DROP}
+    if "items" in out:
+        out["items"] = strict_schema(out["items"])
+    if "properties" in out:
+        out["properties"] = {k: strict_schema(v) for k, v in out["properties"].items()}
+        out["additionalProperties"] = False
+        out["required"] = list(out["properties"])  # strict mode requires every property
     return out
 
 
 class GreedyChooser:
-    """No model: takes the candidate closest to the top hold, preferring whichever limb is lowest.
+    """No model: rolls the whole sequence out itself, taking the candidate that gains most towards
+    the top hold at each step. The offline baseline the VLM is measured against.
 
-    Two jobs -- it runs the loop offline in the self-test, and it is the fallback when the model
-    returns an invalid move twice (docs/07, "VLM invalid output").
+    It re-derives candidates from the pose at every step, which the VLM does not get to do -- so this
+    is a ceiling on what the reach model allows, not a like-for-like opponent.
     """
 
     name = "greedy"
 
-    def __init__(self, scene):
+    def __init__(self, scene, model=None):
+        from .candidates import ReachModel
+
         self.scene = scene
-        self._seen: set[tuple] = set()
+        self.model = model or ReachModel()
 
     def choose(self, system: str, payload: dict, schema: dict, image_png: bytes | None) -> dict:
+        from .candidates import candidates
+        from .scene import HANDS
+
         top = self.scene.position(payload["goal"]["top_hold_id"])
-        body = payload["body"]
-        best = None
-        for limb, ids in payload["candidates"].items():
-            here = self.scene.position(body[limb])
-            for hold_id in ids:
-                target = self.scene.position(hold_id)
-                gain = math.dist(here, top) - math.dist(target, top)
-                # Unseen poses first: without this it undoes its own move forever whenever every
-                # option loses ground.
-                fresh = tuple(sorted({**body, limb: hold_id}.items())) not in self._seen
-                score = (fresh, gain)
-                if best is None or score > best[0]:
-                    best = (score, limb, hold_id)
-        _, limb, hold_id = best
-        self._seen.add(tuple(sorted({**body, limb: hold_id}.items())))
-        return {"reason": "greedy: largest gain towards the top hold",
-                "moving_limb": limb, "target_hold_id": str(hold_id)}
+        pose = dict(payload["body"])
+        limit = schema["properties"]["moves"]["maxItems"]
+        moves: list[dict] = []
+        seen: set[tuple] = {tuple(sorted(pose.items()))}
+
+        while len(moves) < limit:
+            if all(pose[hand] == payload["goal"]["top_hold_id"] for hand in HANDS):
+                break
+            best = None
+            for limb, ids in candidates(self.scene, pose, self.model).items():
+                here = self.scene.position(pose[limb])
+                for hold_id in ids:
+                    gain = math.dist(here, top) - math.dist(self.scene.position(hold_id), top)
+                    # Unseen poses first: without this it undoes its own move forever whenever every
+                    # option loses ground.
+                    fresh = tuple(sorted({**pose, limb: hold_id}.items())) not in seen
+                    if best is None or (fresh, gain) > best[0]:
+                        best = ((fresh, gain), limb, hold_id)
+            if best is None:  # nothing reachable for any limb
+                break
+            _, limb, hold_id = best
+            pose[limb] = hold_id
+            seen.add(tuple(sorted(pose.items())))
+            moves.append({"reason": "greedy: largest gain towards the top hold",
+                          "moving_limb": limb, "target_hold_id": str(hold_id)})
+        return {"moves": moves}
+
+
+def chooser_for(model: str, scene=None) -> MoveChooser:
+    """The CLI's model name -> a chooser. `greedy` (or `--offline`) needs the scene; everything else
+    picks the provider off the name, after the short aliases are expanded."""
+    if model == "greedy":
+        return GreedyChooser(scene)
+    model = ALIASES.get(model, model)
+    return GeminiChooser(model) if model.startswith("gemini") else OpenAIChooser(model)

@@ -31,6 +31,27 @@ class ReachModel:
     max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
 
 
+def blocked_holds(pose: Pose, limb: str) -> set[int]:
+    """Holds this limb may not move to: the one it is already on, and any hold that would leave the
+    four limbs on fewer than three holds.
+
+    Matching -- two limbs on one hold -- is allowed between limbs of the same kind: hand/hand (Unity
+    clears the route only when *both* hands are on the top hold, ClimberRagdoll.IsToppedOut, so this
+    is how a plan finishes) and foot/foot. **Hand/foot is not**, matching the prompt.
+
+    Also forbidden is all four limbs on two holds -- not a position a climber hangs in, and greedy
+    went there on 22% of its poses when nothing stopped it.
+    """
+    blocked = {pose[limb]}
+    for other in LIMBS:
+        same_kind = (other in HANDS) == (limb in HANDS)
+        if other == limb:
+            continue
+        if not same_kind or len(set({**pose, limb: pose[other]}.values())) < 3:
+            blocked.add(pose[other])
+    return blocked
+
+
 def anchors(scene: Scene, pose: Pose, model: ReachModel = ReachModel()) -> dict[str, tuple[float, float]]:
     """Where each limb reaches from: shoulders and hips hung off the centre of the four contacts."""
     xs, ys = zip(*(scene.position(pose[limb]) for limb in LIMBS))
@@ -43,6 +64,40 @@ def anchors(scene: Scene, pose: Pose, model: ReachModel = ReachModel()) -> dict[
     }
 
 
+def rejection(scene: Scene, pose: Pose, limb: str, hold_id: int,
+              model: ReachModel = ReachModel(), anchor=None) -> str | None:
+    """Why `limb` may not move to `hold_id` from `pose`, in the words of the rule that refused it,
+    or None if it may. Occupancy is `blocked_holds`; this is the geometry.
+
+    candidates() and planner.validate() both read the answer here, so a rejected move is explained
+    by the filter that actually stopped it. Reporting every refusal as "out of reach" hid a 2 mm
+    crossing overshoot on wall 7 behind a distance message, and no amount of `stretch` moved it.
+    """
+    anchor = anchor or anchors(scene, pose, model)
+    x, y = scene.position(hold_id)
+    hand = limb in HANDS
+    step = model.hand_step if hand else model.foot_step
+    distance = math.dist(scene.position(pose[limb]), (x, y))
+    if distance > step:
+        return (f"out of reach: {distance:.2f} m from hold {pose[limb]}, and a "
+                f"{'hand' if hand else 'foot'} moves at most {step:.2f} m")
+    if hand and y < anchor["left_foot"][1]:
+        return f"below the hip line (y {y:.2f} m, hips {anchor['left_foot'][1]:.2f} m); hands stay above it"
+    if not hand and y > anchor["left_hand"][1] - 0.1:
+        return (f"above the shoulder line (y {y:.2f} m, shoulders {anchor['left_hand'][1]:.2f} m); "
+                f"feet stay below it")
+    opposite_x = scene.position(pose[OPPOSITE[limb]])[0]
+    crossed = x > opposite_x + model.cross_margin if limb.startswith("left") \
+        else x < opposite_x - model.cross_margin
+    if crossed:
+        return (f"crossed over {OPPOSITE[limb]}: x {x:.2f} m against its {opposite_x:.2f} m, past "
+                f"the {model.cross_margin:.2f} m allowance")
+    span = _span(scene, {**pose, limb: hold_id})
+    if span > model.max_span:
+        return f"body too stretched: hand to foot {span:.2f} m against a {model.max_span:.2f} m limit"
+    return None
+
+
 def candidates(
     scene: Scene,
     pose: Pose,
@@ -51,35 +106,15 @@ def candidates(
 ) -> dict[str, list[int]]:
     """Reachable route holds per limb. A limb with no candidate is left out."""
     route = set(scene.route.hold_ids)
-    held = {pose[limb] for limb in LIMBS}
     anchor = anchors(scene, pose, model)
-    hip_y = anchor["left_foot"][1]
-    shoulder_y = anchor["left_hand"][1]
     top = scene.position(scene.route.top_hold_id)
 
     out: dict[str, list[int]] = {}
     for limb in LIMBS:
-        step = model.hand_step if limb in HANDS else model.foot_step
-        here = scene.position(pose[limb])
-        opposite_x = scene.position(pose[OPPOSITE[limb]])[0]
-        found = []
-        for hold in scene.holds:
-            if hold.id not in route or hold.id in held:
-                continue
-            x, y = hold.position
-            if math.dist(here, hold.position) > step:  # one limb, one step
-                continue
-            if limb in HANDS and y < hip_y:  # hands stay above the hips
-                continue
-            if limb in FEET and y > shoulder_y - 0.1:  # feet stay below the shoulders
-                continue
-            if limb.startswith("left") and x > opposite_x + model.cross_margin:
-                continue
-            if limb.startswith("right") and x < opposite_x - model.cross_margin:
-                continue
-            if _span(scene, {**pose, limb: hold.id}) > model.max_span:  # don't tear the body apart
-                continue
-            found.append(hold.id)
+        blocked = blocked_holds(pose, limb)
+        found = [hold.id for hold in scene.holds
+                 if hold.id in route and hold.id not in blocked
+                 and rejection(scene, pose, limb, hold.id, model, anchor) is None]
         # ponytail: sorted by progress towards the top so truncation keeps the useful ones. A
         # smarter ranking only matters once the prompt is provably too long.
         found.sort(key=lambda hid: math.dist(scene.position(hid), top))

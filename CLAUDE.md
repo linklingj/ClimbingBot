@@ -28,9 +28,9 @@ ClimbingBotUnity/Assets/
 src/vlm/                    candidate generator, VLM planner, 합성 Scene JSON
 ```
 
-끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini structured output,
-검증/재요청/fallback, plan-replan 루프, 오프라인 selftest.
-다음: 실제 Gemini 키로 valid move rate / 완등률을 greedy 베이스라인과 비교.
+끝난 것(VLM): candidate generator, 벽 이미지 렌더, Gemini/OpenAI structured
+output, 요청 한 번에 전체 시퀀스를 받아 재생하는 planner, 오프라인 selftest.
+다음: valid move rate / 완등률을 greedy 베이스라인과 비교.
 
 **학습 실행**
 
@@ -45,11 +45,22 @@ mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
 **VLM 실행**
 
 ```
-cp .env.example .env                        # GEMINI_API_KEY 채울 것
-PYTHONPATH=src python -m vlm --seed 3 --out out/seed3
-PYTHONPATH=src python -m vlm --seed 3 --offline   # 키 없이 greedy 베이스라인
-PYTHONPATH=src python -m vlm.selftest             # 모델 없이 도는 검증
+cp .env.example .env                        # GEMINI_API_KEY / OPENAI_API_KEY
+PYTHONPATH=src python -m vlm --wall 3 --out out/wall3   # gemini-3.8-flash
+PYTHONPATH=src python -m vlm --wall 3 --model gpt       # gpt-6-sol
+PYTHONPATH=src python -m vlm --wall 3 --offline         # 키 없이 greedy 베이스라인
+PYTHONPATH=src python -m vlm.selftest                   # 모델 없이 도는 검증
 ```
+
+**API 호출 주의.** `--model`을 쓰는 실행은 전부 유료 API를 때린다. 크레딧이
+바닥나면 그 자리에서 작업이 막힌다(실제로 Gemini가 402로 멈춘 적 있다).
+
+- 실제 호출은 **모델의 판단 자체를 봐야 할 때만**, 그리고 **사용자가 요청했거나
+  명시적으로 승인했을 때만** 한다. 지표를 갱신하겠다고 알아서 여러 벽을 돌리지 않는다.
+- 호출이 필요하면 **벽 하나로 먼저 확인한다.** 여러 벽 배치 실행은 한 벽에서
+  의도대로 도는 것을 본 뒤에, 몇 번 호출인지 먼저 말하고 돌린다.
+- 이미 받은 응답은 재사용한다. 같은 답을 다시 받으려고 호출하지 말 것 --- 필요하면
+  응답을 파일로 떨궈 두고 오프라인에서 분석한다.
 
 빌드/린트 명령은 아직 없다. 검증은 Unity MCP로 play mode에서 돌린다 ---
 `Physics.Simulate`는 `FixedUpdate`를 호출하지 않으므로 **아카데미 루프를

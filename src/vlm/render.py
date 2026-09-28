@@ -42,10 +42,16 @@ def render(scene: Scene, pose: Pose, candidates: dict[str, list[int]], px_per_m:
             for limb in ("left_hand", "right_hand", "right_foot", "left_foot")]
     for i, (_, position) in enumerate(held):  # torso/limb lines, just enough to read the body
         draw.line([xy(position), xy(held[(i + 1) % 4][1])], fill=(80, 160, 255), width=2)
+    labels: dict[int, list[str]] = {}
     for limb, position in held:
         cx, cy = xy(position)
         draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline=(80, 160, 255), width=4)
-        draw.text((cx - radius, cy + radius + 2), _LABEL[limb], fill=(120, 190, 255), font=font)
+        labels.setdefault(pose[limb], []).append(_LABEL[limb])
+    # One label per hold, joined: two hands can match on one hold, and two labels drawn at the same
+    # point overlap into something unreadable -- on the top hold, exactly where it matters most.
+    for hold_id, names in labels.items():
+        cx, cy = xy(scene.position(hold_id))
+        draw.text((cx - radius, cy + radius + 2), "+".join(names), fill=(120, 190, 255), font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
