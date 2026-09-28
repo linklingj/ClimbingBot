@@ -73,12 +73,13 @@ VLM planner가 RL controller에 넘기는 pose는 **limb endpoint 4개**다.
     하는 것은 비현실적이고, 나머지 자세는 RL이 찾는다.
 -   RL은 `hold_id`를 3D 점으로 바꿔 쓸 뿐이다. RL 관측에는 홀드 목록도
     ID도 들어가지 않는다. 어느 홀드로 갈지는 전적으로 planner의 결정이다.
--   **`hold_id`는 네 limb에서 유일하지 않다.** 어느 두 limb이나 같은 홀드를
-    함께 잡을 수 있다(매칭) --- 두 손, 두 발, 그리고 손이 잡은 홀드에 발을
-    올리는 hand-foot match까지. 금지되는 것은 **네 limb이 홀드 두 개에
-    올라간 자세** 하나뿐이다: 매달릴 수 있는 자세가 아니다. 즉 target pose는
-    서로 다른 홀드를 **셋 이상** 쓴다. `ClimberRagdoll`의 grasp은 limb별로
-    걸리고 홀드 쪽에는 점유 상태가 없으므로 Unity는 이미 이걸 그대로 받는다.
+-   **`hold_id`는 네 limb에서 유일하지 않다.** 같은 종류의 두 limb이 같은
+    홀드를 함께 잡을 수 있다(매칭) --- 두 손, 또는 두 발. **손과 발은 같은
+    홀드를 쓰지 않는다**(hand-foot match 금지, 2026-09-28 프롬프트 기준).
+    **네 limb이 홀드 두 개에 올라간 자세**도 금지다: 매달릴 수 있는 자세가
+    아니다. 즉 target pose는 서로 다른 홀드를 **셋 이상** 쓴다.
+    `ClimberRagdoll`의 grasp은 limb별로 걸리고 홀드 쪽에는 점유 상태가
+    없으므로 Unity는 이 제한을 강제하지 않는다 --- 지키는 쪽은 planner다.
 -   **완등은 양손이 top 홀드에 있는 상태다** (`ClimberRagdoll.IsToppedOut`).
     한 손만 올라간 것은 완등이 아니다. 그래서 매칭은 선택이 아니라 계획이
     끝나는 방식이고, planner의 종료 조건도 이것과 같은 식이다.

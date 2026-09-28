@@ -46,16 +46,16 @@ Candidate Generator는 물리적으로 명백히 불가능한 move를 제거한�
 초기 버전에서는 limb root 또는 현재 body state로부터 거리 threshold를
 계산한다. 구현(`src/vlm/candidates.py`)은 후보 하나당 네 가지를 본다.
 
--   **점유** --- **매칭은 어느 두 limb 사이에서나 허용한다**(`blocked_holds`):
-    손-손, 발-발, 그리고 손이 잡은 홀드에 발을 올리는 **hand-foot match**.
-    실제로 쓰는 기술이고, one-shot 실험에서 VLM이 반복해서 요구한 것도
-    이것이다(프롬프트로 금지해 봤지만 오히려 악화됐다). 자기가 이미 잡은
-    홀드는 후보가 아니다. 유일한 금지는 **네 limb이 홀드 두 개에 올라가는
-    자세** --- 매달릴 수 있는 자세가 아니다. 그래서 `blocked_holds`가 보는
-    것은 하나다: 이동 후 서로 다른 홀드가 **셋 이상**이어야 한다. 이전의
-    "한 쌍씩만"은 이 조건의 대용이었는데, 덤으로 hand-foot까지 막고 있었다.
-    hand-foot match가 과격해지지 않게 잡아 주는 것은 아래 hip/shoulder
-    line이다 --- 발은 어깨선 아래 홀드만 취할 수 있다.
+-   **점유** --- **매칭은 같은 종류의 limb 사이에서만 허용한다**
+    (`blocked_holds`): 손-손, 발-발. **hand-foot match는 금지한다.**
+    자기가 이미 잡은 홀드도 후보가 아니다. 여기에 더해 **네 limb이 홀드 두
+    개에 올라가는 자세**를 막는다 --- 매달릴 수 있는 자세가 아니다. 그래서
+    `blocked_holds`가 보는 것은 둘이다: 같은 종류인가, 그리고 이동 후 서로
+    다른 홀드가 셋 이상인가.
+
+    hand-foot match는 실제 등반 기술이고 한동안 허용했었다. 프롬프트가
+    금지로 돌아섰고(2026-09-28) 코드와 이 문서를 거기 맞췄다. 되돌릴 거면
+    아래 one-shot 절의 측정을 먼저 볼 것 --- 금지가 더 나빴다는 기록이 있다.
 -   **step** --- 그 limb의 현재 홀드에서 target까지 거리. 손 1.4 m, 발 1.0 m.
 -   **hip/shoulder line** --- 네 접점의 중심에서 torso(0.55 m)의 절반만큼
     위가 어깨선, 아래가 골반선. 손은 골반선 위, 발은 어깨선 아래로만 간다.
@@ -180,12 +180,41 @@ re-planning 루프였다. 재시도·greedy fallback·pose 순환 감지가 거�
 -   output schema가 유효한지
 -   target hold가 route에 포함되는지
 -   해당 limb가 이미 target을 잡고 있지 않은지
--   **이동 후 서로 다른 홀드가 셋 이상인지** (매칭은 어느 두 limb 사이에서나
-    허용, 네 limb-두 홀드만 금지)
+-   **점유** --- 같은 종류(손-손, 발-발)의 매칭만 허용하고, 이동 후 서로
+    다른 홀드가 셋 이상이어야 한다
 -   target이 그 pose의 candidate set에 존재하는지 (= reach)
 
 점유 판정은 `candidates.blocked_holds()` 하나를 candidate generator와
 validator가 같이 쓴다 --- 두 군데에 같은 규칙을 적으면 갈라진다.
+
+**`validate()`는 후보 목록이 아니라 `ReachModel`을 받는다.** 후보 목록은
+프롬프트용이라 `max_per_limb`로 잘려 있고 top까지의 거리로 정렬돼 있어서,
+그걸로 검사하면 일곱 번째로 가까운 홀드가 "reach 밖"이 된다(20벽 재생에서
+후보가 6개를 넘는 limb-pose가 3번 나왔다).
+
+거절 사유는 `candidates.rejection()` 하나가 만든다 --- 후보 생성기와
+validator가 같은 함수를 읽으므로 **실제로 막은 규칙의 이름이 그대로 나온다**:
+`out of reach` / `below the hip line` / `above the shoulder line` /
+`crossed over <limb>` / `body too stretched`. 전부 "out of reach"로 찍던
+동안 wall 7의 2 mm crossing 초과가 거리 문제로 보였고, reach 한계를 100배로
+늘려도 안 풀리는 이유를 알 수 없었다.
+
+### 제약 전부 끄기 (`--skip-filters`)
+
+`plan(skip_filters=True)` / `--skip-filters`는 **재생에서 심판을 끈다.**
+route 소속, 점유(세 홀드 바닥), reach, 자세 규칙 전부 통과시킨다.
+
+끄지 않는 것은 재생이 돌아가기 위한 둘뿐이다 --- `moving_limb`이 실제 limb인지,
+target이 이 벽에 있는 홀드인지. 이건 등반 제약이 아니라 그게 아니면 pose를
+갱신할 수 없는 값이다.
+
+**왜 있느냐:** 지금 모델은 2\~6번째 move에서 어긋나는데, 거기서 재생이 끊기면
+**그 뒤에 뭘 썼는지 볼 수가 없다.** 시퀀스 전체를 읽고 모델이 어디서부터
+body를 놓치는지 보려는 스위치다.
+
+규칙이 거부했을 move는 실행되고 `Move.forced`로 표시된다(`Plan.forced`가
+센다, CLI는 `!`). **측정에는 쓰지 않는다** --- 이걸 켠 plan의 완등률은
+아무것도 증명하지 않는다.
 
 ## 평가
 
@@ -194,6 +223,8 @@ validator가 같이 쓴다 --- 두 군데에 같은 규칙을 적으면 갈라�
 -   `proposed` / `examined` / `executed` --- 모델이 쓴 move 수 / 재생한 수 /
     실행된 수. `proposed > examined`는 완등 후에도 계속 썼다는 뜻이다.
 -   Top hold까지 계획 성공률 (`reached_top`)
+-   `forced` --- 규칙을 꺼 준 덕분에 통과한 move 수. 0이 아니면 그 plan의
+    완등률은 아무 의미가 없다.
 -   평균 move 수
 -   RL execution까지 포함한 plan success rate
 
@@ -232,6 +263,7 @@ PYTHONPATH=src python -m vlm --wall 3 --model gpt        # OpenAI (.env의 OPENA
 PYTHONPATH=src python -m vlm --wall 3 --model gpt-6-luna # 정확한 모델 이름도 그대로
 PYTHONPATH=src python -m vlm --wall 3 --offline          # 키 없이 greedy 베이스라인
 PYTHONPATH=src python -m vlm --wall 3 --out out/wall3    # 산출물 저장 (아래)
+PYTHONPATH=src python -m vlm --wall 3 --skip-filters     # 심판 끄고 시퀀스 전체 재생 (측정 아님)
 PYTHONPATH=src python -m vlm --scene path/to/scene.json  # 임의의 Scene JSON
 ```
 
@@ -293,6 +325,8 @@ property가 `required`여야 하므로 `strict_schema()`가 같은 스키마를 
 -   **불가능한 move가 나오면 거기서 끝난다.** 재시도도 greedy fallback도
     없다 --- 재요청할 상대가 없고, 그 뒤 move들은 일어나지 않은 pose를
     전제로 쓰여 있다. `stopped`에 몇 번째 move가 왜 막혔는지 남는다.
+    멈춘 시퀀스를 끝까지 보고 싶으면 `--skip-filters`다
+    (위 "제약 전부 끄기").
 -   pose 순환 감지는 없앴다. 루프가 없으니 순환할 것도 없고, 같은 pose를
     다시 지나가는 시퀀스는 `backtracks`로 잡힌다.
 -   각 move는 docs/07의 target pose(네 limb + `move` 플래그)로 직렬화된다.
@@ -311,10 +345,15 @@ candidate generator가 거르는 것은 **물리적으로 불가능한** move다
 -   **같은 limb 연속 이동.**
 
 매칭은 반대로 **프롬프트가 명시적으로 알려 준다** --- "두 limb이 같은 홀드에
-올라갈 수 있다"를 대문자 규칙으로 박아 두었다. 손-손, 발-발, 그리고 손이
-잡은 홀드에 발을 올리는 hand-foot match까지. 점유는 그 자체로 피할 이유가
-아니라는 것, 그리고 top에서는 그것이 완등 방법이라는 것을 같이 말한다.
-금지하는 쪽으로 써 봤더니 오히려 나빠졌다(아래 one-shot 절).
+올라갈 수 있다"를 대문자 규칙으로 박아 두었다. 손-손과 발-발만이고
+hand-foot은 금지라고 같이 못박는다. 점유가 그 자체로 피할 이유는 아니라는
+것, top에서는 매칭이 완등 방법이라는 것도 프롬프트가 말한다.
+
+**span도 프롬프트에 숫자로 들어간다** --- 매 move 후 각 손과 각 발의 거리
+중 최대가 `limits.max_span`(2.4 m)을 넘지 못한다. step과 별개의 한계라는
+것, 발이 그대로면 손이 1 m만 가도 걸린다는 것, 그러면 발을 먼저 올리라는
+것까지 같이 쓴다. payload의 `limits`에도 `max_span`이 들어가고, 프롬프트에
+박힌 2.4라는 숫자가 `ReachModel.max_span`과 같은지는 selftest가 본다.
 
 ### 합성 벽 --- 생성기는 Unity에만 있다
 
@@ -355,11 +394,11 @@ greedy chooser(모델 없음) 기준 `/walls`의 20개 벽에서 **20/20 완등*
   손만             13/20                    13/20
   없음             0/20                     10/20
 
-이 표는 hand-foot match를 막아 둔 상태에서 측정한 것이다. hand-foot까지
-허용한 현재 규칙에서 greedy는 여전히 **20/20**, 평균 21.6 move이고
-hand-foot match가 나타나는 pose는 4%(17/432)다 --- greedy는 이 기술을 거의
-쓰지 않으므로 완등률에 기여하지 않는다. 허용한 이유는 greedy가 아니라 VLM이
-계속 요구했기 때문이고, 손만/없음 행은 다시 재지 않았다.
+이 표는 hand-foot match를 막은 지금 규칙에서 잰 것이다. 한동안 허용했을
+때도 greedy는 20/20에 평균 21.6 move였고 hand-foot이 나타나는 pose는
+4%(17/432)뿐이었다 --- greedy는 이 기술을 거의 안 쓰므로 완등률에 기여하지
+않는다. 다시 막은 지금은 20/20, 평균 21.2 move, hand-foot 0%다. **이 규칙의
+근거는 greedy가 아니라 VLM 쪽 측정이다**(아래 one-shot 절).
 
 발 매칭이 대부분의 차이다. 발의 step(1.0 m)이 짧아서 닿는 홀드가 대개
 **반대쪽 발이 이미 밟고 있는 것**이고, 그래서 매칭 전에는 초기 포즈에서 발에
@@ -388,10 +427,12 @@ move 하나씩 재계획하던 루프를 걷어내고 요청 한 번으로 바�
 끝까지 추적하지 못한다. `limits`가 "그 시점 그 limb의 홀드에서" 재는
 거리라는 것을 프롬프트가 못박지만, 여덟 move쯤 가면 놓친다.
 
-점유 실패는 hand-foot match를 허용하면서 사라졌다. 그전에는 실패의 절반이
-"발을 손이 잡은 홀드에 올린다"였고, 프롬프트로 금지해 봤더니 **오히려
-나빠졌다**(두 벽이 move 1에서 실패). 모델이 계속 요구하는 데는 이유가 있었고
---- 실제 등반 기술이다 --- 규칙을 바꾸는 쪽이 맞았다.
+**hand-foot match --- 뒤집힌 결정.** 한때 실패의 절반이 "발을 손이 잡은
+홀드에 올린다"였다. 프롬프트로 금지해 봤더니 오히려 나빠져서(두 벽이 move
+1에서 실패) 규칙 쪽을 열었고, 점유 실패가 사라졌다. 2026-09-28에 다시
+금지로 돌렸다 --- 프롬프트가 먼저 바뀌었고 코드와 문서를 거기 맞췄다.
+**금지 상태의 VLM 수치는 아직 다시 재지 않았다.** 위 "두 벽이 move 1에서
+실패"가 여전히 유효한지가 다음에 확인할 것이다.
 
 **아직 재지 않은 것:** 같은 모델로 돌린 re-planning 루프와의 직접 비교.
 위 0/5는 greedy(20/20)와의 비교일 뿐이고, 루프 쪽을 모델로 돌린 수치는

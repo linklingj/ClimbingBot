@@ -5,6 +5,7 @@
     PYTHONPATH=src python -m vlm --wall 3 --model gpt-6-luna   # any exact model name
     PYTHONPATH=src python -m vlm --wall 3 --offline            # no API key, greedy baseline
     PYTHONPATH=src python -m vlm --wall 3 --out out/wall3      # + scene.json, plan.json, PNGs
+    PYTHONPATH=src python -m vlm --wall 3 --skip-filters       # referee off, read the whole sequence
 """
 from __future__ import annotations
 
@@ -28,6 +29,10 @@ def main() -> int:
     ap.add_argument("--offline", action="store_true", help="greedy chooser, no model call")
     ap.add_argument("--no-image", action="store_true", help="JSON only, to measure the image's worth")
     ap.add_argument("--max-moves", type=int, default=60)
+    ap.add_argument("--skip-filters", action="store_true",
+                    help="replay with every rule off -- route, occupancy, reach, posture -- so the "
+                         "whole sequence runs instead of stopping at the first bad move. The moves "
+                         "that would have been refused are marked (!). Never when measuring.")
     ap.add_argument("--out", type=Path, help="scene.json, plan.json, request.png (the exact image "
                                             "sent to the model) and one PNG per pose: step00.png "
                                             "is the start, stepNN.png the pose after move NN")
@@ -47,7 +52,7 @@ def main() -> int:
 
     def on_step(index, move):
         print(f"  {index:2d}. {move.moving_limb:11s} {move.from_hold_id:3d} -> "
-              f"{move.target_hold_id:3d}  {move.reason}")
+              f"{move.target_hold_id:3d} {'!' if move.forced else ' '} {move.reason}")
         if out:
             snapshot(index, move.pose)
 
@@ -56,10 +61,10 @@ def main() -> int:
     if out:
         snapshot(0, initial_pose(scene))
     result = plan(scene, chooser, max_moves=args.max_moves, with_image=not args.no_image,
-                  on_step=on_step)
+                  skip_filters=args.skip_filters, on_step=on_step)
     print(f"reached_top={result.reached_top} executed={len(result.moves)}/{result.proposed} "
           f"valid_move_rate={result.valid_move_rate:.2f} repeated_limb={result.repeated_limb} "
-          f"backtracks={result.backtracks} {result.stopped}")
+          f"backtracks={result.backtracks} forced={result.forced} {result.stopped}")
     if out:
         (out / "plan.json").write_text(json.dumps(result.to_dict(), indent=2))
         if result.request_png:

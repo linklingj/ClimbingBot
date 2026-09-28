@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import math
 
-from .candidates import LIMBS, ReachModel, anchors, blocked_holds, candidates, initial_pose
-from .planner import build_payload, plan, plan_schema, validate
+from .candidates import (LIMBS, ReachModel, anchors, blocked_holds, candidates,
+                         initial_pose, rejection)
+from .planner import SYSTEM, build_payload, plan, plan_schema, validate
 from .providers import ALIASES, GEMINI, GPT, GreedyChooser, chooser_for, strict_schema
 from .render import render
 from .scene import FEET, HANDS, MAX_REACH, Scene, wall, wall_paths
@@ -87,29 +88,37 @@ def check_validator():
     limb, hold_id = next(iter(cands.items()))
     hold_id = hold_id[0]
 
-    assert validate({"moving_limb": limb, "target_hold_id": str(hold_id)}, scene, pose, cands) is None
-    assert validate({"moving_limb": "tail", "target_hold_id": "1"}, scene, pose, cands)
-    assert validate({"moving_limb": limb, "target_hold_id": "nope"}, scene, pose, cands)
-    assert validate({"moving_limb": limb, "target_hold_id": "9999"}, scene, pose, cands)
-    assert validate({"moving_limb": limb, "target_hold_id": str(pose[limb])}, scene, pose, cands)
-    # Matching: any two limbs may share, hand-foot included. Only the three-hold floor stops it, so
-    # from a four-hold pose nothing but the limb's own hold is blocked. Checked on the rule rather
-    # than through validate(), which would also reject a shared hold for being out of reach.
+    assert validate({"moving_limb": limb, "target_hold_id": str(hold_id)}, scene, pose) is None
+    assert validate({"moving_limb": "tail", "target_hold_id": "1"}, scene, pose)
+    assert validate({"moving_limb": limb, "target_hold_id": "nope"}, scene, pose)
+    assert validate({"moving_limb": limb, "target_hold_id": "9999"}, scene, pose)
+    assert validate({"moving_limb": limb, "target_hold_id": str(pose[limb])}, scene, pose)
+    # Matching is same-kind only: hand/hand and foot/foot, never hand/foot. Checked on the rule
+    # rather than through validate(), which would also reject a shared hold the geometry refuses.
     assert len(set(pose.values())) == 4
-    for limb_ in LIMBS:
-        assert blocked_holds(pose, limb_) == {pose[limb_]}, "a four-hold pose blocks nothing else"
+    for hand in HANDS:  # the other hand's hold is free, both feet's are not
+        assert blocked_holds(pose, hand) == {pose[hand], pose["left_foot"], pose["right_foot"]}
+    for foot in FEET:
+        assert blocked_holds(pose, foot) == {pose[foot], pose["left_hand"], pose["right_hand"]}
     matched = {**pose, "right_hand": pose["left_hand"]}  # hands matched: three holds left
     assert len(set(matched.values())) == 3
-    # The two limbs already sharing may still move anywhere -- stepping off a match keeps three
-    # holds. Only their own hold is out, and they may not re-take it.
-    for limb_ in ("left_hand", "right_hand"):
-        assert blocked_holds(matched, limb_) == {matched[limb_]}
-    # The two that are NOT sharing are pinned: any hold in use would make it four limbs on two
-    # holds. This is where the second match, of any kind, is refused.
-    for limb_ in ("left_foot", "right_foot"):
-        assert blocked_holds(matched, limb_) == set(matched.values())
+    # A matched hand may still step off onto a free hold, but every hold in use is out: the feet's
+    # by kind, its partner's because it is already standing there.
+    for hand in HANDS:
+        assert blocked_holds(matched, hand) == set(matched.values())
+    # The feet are pinned: the hands' holds by kind, each other's because a second match would
+    # leave four limbs on two holds.
+    for foot in FEET:
+        assert blocked_holds(matched, foot) == set(matched.values())
     off = next(h.id for h in scene.holds if h.id not in cands[limb] and h.id not in pose.values())
-    assert validate({"moving_limb": limb, "target_hold_id": str(off)}, scene, pose, cands)
+    assert validate({"moving_limb": limb, "target_hold_id": str(off)}, scene, pose)
+    # The refusal names the rule that refused, not "out of reach" for everything: a hold in range
+    # but on the wrong side of the body says so, which is what sent wall 7 chasing a reach bug.
+    far = max(scene.holds, key=lambda h: math.dist(scene.position(pose[limb]), h.position))
+    assert "out of reach" in rejection(scene, pose, limb, far.id)
+    reasons = {rejection(scene, pose, l, h.id).split(":")[0].split(" (")[0]
+               for l in LIMBS for h in scene.holds if rejection(scene, pose, l, h.id)}
+    assert {"out of reach", "below the hip line", "above the shoulder line"} <= reasons, reasons
 
     schema = plan_schema(scene, 12)
     move = schema["properties"]["moves"]["items"]
@@ -124,7 +133,12 @@ def check_validator():
     assert strict["properties"]["moves"]["items"]["properties"] == move["properties"], \
         "the enums must survive the dialect swap"
 
+    # The prompt states max_span as a number, so the number has to be the one the referee uses.
+    assert f"{ReachModel().max_span} m" in SYSTEM, "the metres in the prompt are not max_span"
     payload = build_payload(scene, pose, ReachModel())
+    assert payload["limits"] == {"hand_step": ReachModel().hand_step,
+                                 "foot_step": ReachModel().foot_step,
+                                 "max_span": ReachModel().max_span}
     assert payload["goal"]["top_hold_id"] == scene.route.top_hold_id
     assert len(payload["holds"]) == len(scene.route.hold_ids)
     assert payload["limits"]["hand_step"] > payload["limits"]["foot_step"] > 0
@@ -224,6 +238,51 @@ def check_replay():
     assert plan(scene, _Canned(canned, route), with_image=False).request_png is None
 
 
+def check_skip_filters():
+    """--skip-filters runs the sequence with the referee off. Greedy rolled out against a reach
+    model bigger than the real one stands in for a model that writes moves it cannot make."""
+    scene = wall(0)
+    route = list(scene.route.hold_ids)
+    optimist = GreedyChooser(scene, ReachModel(hand_step=2.1, foot_step=1.5, max_span=3.6))
+    written = optimist.choose("", {"goal": {"top_hold_id": scene.route.top_hold_id},
+                                   "body": initial_pose(scene)},
+                              {"properties": {"moves": {"maxItems": 60}}}, None)["moves"]
+
+    strict = plan(scene, _Canned(written, route), with_image=False)
+    assert strict.stopped.startswith("move ") and not strict.forced, strict.stopped
+
+    loose = plan(scene, _Canned(written, route), with_image=False, skip_filters=True)
+    assert len(loose.moves) == len(written), "every move the model wrote must run"
+    assert loose.forced, "the moves the rules would have refused must say so"
+    # The flags are honest: replaying what it executed with the referee back on stops where the
+    # strict run stopped.
+    again = plan(scene, _Canned([{"reason": "", "moving_limb": m.moving_limb,
+                                  "target_hold_id": str(m.target_hold_id)} for m in loose.moves],
+                                route), with_image=False)
+    assert len(again.moves) == len(strict.moves)
+    print(f"  filters on executed {len(strict.moves)}, off executed {len(loose.moves)} "
+          f"({loose.forced} of them forced)")
+
+    # Off means off: reach, posture, occupancy and the route itself. Four limbs stacked on one hold
+    # is refused by every rule there is, and still runs.
+    stacked = {limb: route[0] for limb in LIMBS}
+    move = {"moving_limb": "left_hand", "target_hold_id": str(route[0])}
+    assert validate(move, scene, stacked) and validate(move, scene, stacked, skip_filters=True) is None
+    off_route = next((h.id for h in scene.holds if h.id not in route), None)
+    if off_route is not None:
+        wander = {"moving_limb": "left_hand", "target_hold_id": str(off_route)}
+        assert validate(wander, scene, stacked) and \
+            validate(wander, scene, stacked, skip_filters=True) is None
+    # What it does not waive: a limb the replay cannot move, or a hold that is not on the wall.
+    assert validate({"moving_limb": "tail", "target_hold_id": str(route[0])},
+                    scene, stacked, skip_filters=True)
+    assert validate({"moving_limb": "left_hand", "target_hold_id": "9999"},
+                    scene, stacked, skip_filters=True)
+    # The limits handed to the model are the real ones either way -- this is the referee's switch.
+    assert build_payload(scene, initial_pose(scene), ReachModel())["limits"]["hand_step"] \
+        == ReachModel().hand_step
+
+
 def check_render():
     scene = wall(0)
     pose = initial_pose(scene)
@@ -233,6 +292,6 @@ def check_render():
 
 if __name__ == "__main__":
     for check in (check_scene, check_candidates, check_validator, check_aliases,
-                  check_plan, check_replay, check_render):
+                  check_plan, check_replay, check_skip_filters, check_render):
         check()
         print(f"ok  {check.__name__}")

@@ -173,3 +173,91 @@ invalid output" 처리, docs/00은 Phase 2 항목과 위험 표, CLAUDE.md는 VL
 - greedy는 rollout 안에서 재계획하고 VLM은 못 한다. 공정한 비교를 원하면 greedy도
   시퀀스를 한 번에 쓰고 되돌아보지 않게 만들어야 한다.
 - Unity Scene JSON exporter, 그리고 target pose JSON을 ClimbingAgent에 먹이는 연결.
+
+## reach 제한 일시 해제 → 심판 끄기 (2026-09-28)
+
+gpt-6-sol이 0/5인데 실패가 전부 reach 초과라, 2\~6번째 move에서 재생이 끊겨 **그 뒤 시퀀스를
+볼 수가 없었다.** 모델이 여덟 move쯤부터 body 추적을 놓친다는 건 알겠는데, 놓친 뒤에 뭘
+쓰는지는 안 보이는 상태.
+
+처음에는 배수 knob(`--stretch X`)으로 만들었다. 거리 한계만 늘리는 방식이라 crossing에
+걸리면 100배를 줘도 안 뚫렸고(아래), 배수를 몇으로 줄지도 결국 임의였다. **불리언 하나로
+바꿨다.**
+
+- `plan(skip_filters=True)` / `--skip-filters`가 재생에서 심판을 끈다 --- route 소속,
+  점유(세 홀드 바닥), reach, 자세 전부.
+- 안 끄는 것은 둘: `moving_limb`이 실제 limb인지, target이 이 벽의 홀드인지. 등반 제약이
+  아니라 그게 아니면 pose를 갱신할 수 없는 값이다.
+- 규칙이 거부했을 move는 실행되고 `Move.forced`로 표시된다. `Plan.forced`가 세고, CLI는
+  `!`와 `forced=N`, plan.json에도 move마다 들어간다.
+- 프롬프트의 `limits`는 어느 쪽이든 진짜 값 그대로다. 모델에게 더 뻗으라고 말하는 옵션이
+  아니라 심판만 끄는 옵션이다.
+- 곁다리로 고친 것: 심판이 쓰는 후보 목록의 `max_per_limb` 절단을 없앴다. 그 값은 프롬프트
+  길이용인데 지금 프롬프트에 후보가 안 들어가고, 절단된 목록으로 검사하면 일곱 번째로 가까운
+  홀드가 "out of reach"가 된다. 20벽 재생에서 후보 6개 초과가 stretch 1.0에서 3번,
+  1.5배에서 65번 --- stretch를 넣었으면 반드시 터졌을 자리다.
+
+`selftest`의 `check_skip_filters`: 일부러 큰 reach model로 굴린 greedy 시퀀스를 진짜
+model로 재생하면 move 1에서 멈추고(0 실행), 심판을 끄면 7 move 전부 실행되며 flag가
+붙는다. 그 7개를 다시 심판 켜고 재생하면 도로 0이다 --- flag가 정직한지까지 본다. 네 limb을
+한 홀드에 쌓은 pose와 route 밖 홀드도 통과하는지, limb 이름과 없는 홀드 id는 여전히
+거절되는지도 같이 본다.
+
+
+## stretch 100인데 out of reach (2026-09-28)
+
+wall 7을 `--stretch 100`으로 돌렸는데 move 16이 여전히 "out of reach"로 막혔다. 재현해
+보니 거리 문제가 아니었다. `left_hand`가 홀드 14(x 1.766)를 잡으려는데 `right_hand`가
+홀드 13(x 1.514)에 있어서 **crossing 필터**가 막고 있었다 --- 1.766 > 1.514 + 0.25,
+**2 mm 초과**다.
+
+두 가지가 겹쳐 있었다.
+
+- `stretched()`가 `cross_margin`을 안 늘렸다. 골반/어깨선과 같은 "자세 규칙"으로 묶어
+  뒀는데, cross_margin은 미터로 된 거리 허용치다. 이제 같이 곱한다. 안 늘리는 건 골반/
+  어깨선뿐 --- 그건 거리가 아니라 limb이 몸의 어느 쪽에 있느냐는 규칙이다.
+- **거절 사유가 전부 "out of reach"였다.** `validate()`가 후보 목록에 있는지만 보고
+  없으면 거리 문제라고 단정했다. 그래서 2 mm crossing 초과가 거리 메시지로 나왔고,
+  stretch를 100으로 올려도 안 풀리는 이유를 읽을 수가 없었다.
+
+`candidates.rejection(scene, pose, limb, hold_id, model)` 하나로 기하 필터를 모아
+사유 문자열을 돌려준다. 후보 생성기와 `validate()`가 같이 읽으므로 막은 규칙의 이름이
+그대로 나온다. `validate()`는 이제 후보 목록 대신 `ReachModel`을 받는다 --- 목록은
+프롬프트용이라 `max_per_limb`로 잘려 있어서, 일곱 번째로 가까운 홀드를 reach 밖이라고
+하던 버그도 같이 없어졌다(20벽에서 후보 6개 초과가 stretch 1.0에 3번, 1.5배에 65번).
+
+같은 시퀀스 재생 결과:
+
+```
+심판 켬  15 move 실행, 16번에서 멈춤: crossed over right_hand: x 1.77 against 1.51, past 0.25 m
+심판 끔  16 move 실행 (1개 forced), 시퀀스가 top 전에 끝남
+```
+
+거리 한계만 1.05배 늘려 보면 사유가 span으로 바뀌고, 그 다음은 또 다른 규칙이다 --- 한
+번에 하나씩만 보인다. 그래서 배수 knob을 버렸다. 보고 싶은 건 "조금 더 뻗으면 되나"가
+아니라 "이 시퀀스가 끝까지 뭘 쓰는가"였다.
+
+**측정에는 쓰지 않는다.** `forced > 0`인 plan의 완등률은 아무것도 증명하지 않고,
+docs/04 평가 절에도 그렇게 적었다.
+
+## hand-foot match 금지로 되돌리고, span을 프롬프트에 숫자로 (2026-09-28)
+
+프롬프트가 먼저 hand-foot match 금지로 바뀌어 있어서 코드와 문서를 거기 맞췄다.
+
+- `blocked_holds`가 같은 종류끼리만 매칭을 허용한다 --- 손-손, 발-발. 네 limb-두 홀드
+  금지는 그대로. 규칙 둘이 한 함수에 있고 candidate generator와 `validate()`가 같이 읽는다.
+- greedy 베이스라인은 **20/20 그대로**, 평균 21.6 → 21.2 move. hand-foot이 나타나던
+  pose는 4%뿐이라 greedy에는 거의 영향이 없다.
+- **이건 뒤집은 결정이다.** 9/27에 이 기술을 금지했을 때 VLM이 두 벽에서 move 1부터
+  실패했고, 그래서 규칙을 열었던 기록이 docs/04에 있다. 금지 상태의 VLM 수치는 아직 다시
+  재지 않았다 --- 문서에도 그렇게 적어 뒀다.
+
+span을 프롬프트에 숫자로 넣었다.
+
+- RULES에 "매 move 후 각 손과 각 발 사이 거리 중 최대가 `limits.max_span`(2.4 m)를 넘지
+  못한다"를 넣고, step과 별개의 한계라는 것(발이 그대로면 손이 1 m만 가도 걸린다)과
+  걸리면 발을 먼저 올리라는 것까지 같이 썼다.
+- payload의 `limits`에 `max_span`을 추가했다. 프롬프트에 박은 2.4가 `ReachModel.max_span`과
+  같은지는 selftest가 본다 --- 숫자를 프롬프트에 적는 값은 이 assert 하나다.
+- 재는 방식은 `_span()` 그대로다(손×발 4쌍의 최대). 손-손이나 발-발 거리는 심판이 안 보고,
+  프롬프트에도 안 쓴다 --- 심판이 안 보는 규칙을 모델에게 말하면 그게 더 나쁘다.

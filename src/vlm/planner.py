@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .candidates import Pose, ReachModel, blocked_holds, candidates, initial_pose
+from .candidates import Pose, ReachModel, blocked_holds, initial_pose, rejection
 from .providers import MoveChooser
 from .render import render
 from .scene import HANDS, LIMBS, Scene
@@ -17,11 +17,12 @@ from .scene import HANDS, LIMBS, Scene
 SYSTEM = """You are an experienced climber working out the beta for a route. You are not searching
 for a path -- the holds are given. Write out the whole sequence of limb moves, in order, that a
 strong climber would actually make, from the starting body position to the top.
+Moves should be possible for 1.7 m tall climber.
 
 INPUT
 An image of the wall: hold ids labelled, your four limbs at the start ringed in blue and joined by
 blue lines. The same state as JSON: every hold on the route, the body's starting position, and
-`limits`, how far one limb may travel in a single move.
+`limits`: how far one limb may travel in a single move, and how far the body may spread.
 
 RULES (hard)
 - One move = exactly one limb to exactly one hold. The other three stay where they are.
@@ -30,15 +31,18 @@ RULES (hard)
   hold it is on at that point in YOUR OWN sequence. Nothing resets between moves, so track where all
   four limbs are as you go -- a move is measured from where that limb actually is by then, not from
   where it started.
-- TWO LIMBS MAY OCCUPY THE SAME HOLD. This is matching, and any pair may do it: both hands on one
-  hold, both feet on one hold, or a foot on a hold a hand is already on (a hand-foot match, where
-  you step up onto your own handhold -- a normal technique). A hold being occupied is never by itself
-  a reason to avoid it. The one arrangement forbidden is all four limbs on two holds.
+- THE BODY ONLY STRETCHES SO FAR. After every move, measure each hand against each foot: the
+  furthest of those four distances is how far the body is spread, and it may not exceed
+  `limits.max_span` metres -- 2.4 m, a 1.7 m climber at full stretch. This is a separate limit from
+  the step above: a hand can move 1.0 m and still tear the body past 2.4 m because the feet stayed
+  where they were. If a hold is too far from your feet, bring a foot up first and take it after.
+- TWO LIMBS MAY OCCUPY THE SAME HOLD. This is matching: both hands on one
+  hold, both feet on one hold. However, foot/hand matching is not allowed.
 - Finish with BOTH hands on `goal.top_hold_id`. The route is cleared only once the second hand
   matches on it, so plan the last two moves together: bring the feet up high enough that the second
   hand can follow.
 
-HOW A CLIMBER CHOOSES (in this order)
+HOW A CLIMBER CHOOSES
 
 1. Keep a triangle. Limbs are stable when they spread into a wide triangle -- 
    two feet apart with a hand above, or two hands apart with a foot
@@ -49,8 +53,7 @@ HOW A CLIMBER CHOOSES (in this order)
 
 3. Move up or sideways. Every move should gain height or set up the next one.
 
-4. Feet first, and alternate. Do not move the same limb twice in a row, and never put a limb
-   back on the hold it just came off
+4. Do not move the same limb twice in a row, and never put a limb back on the hold it just came off
 
 5. Reach from a stance, not from a stretch. A move made with the hips low and the arms locked out
    long is a move you cannot control.
@@ -69,6 +72,7 @@ class Move:
     from_hold_id: int = -1
     reason: str = ""
     pose: Pose = field(default_factory=dict)  # pose after the move
+    forced: bool = False  # would not have been available; ran because plan(skip_filters=True)
 
     def targets(self) -> dict:
         """The docs/07 target pose the RL controller consumes: all four limbs, one of them moving."""
@@ -98,6 +102,11 @@ class Plan:
         return len(self.moves) / self.examined if self.examined else 0.0
 
     @property
+    def forced(self) -> int:
+        """Executed moves the rules would have refused. 0 unless plan(skip_filters=True)."""
+        return sum(move.forced for move in self.moves)
+
+    @property
     def repeated_limb(self) -> int:
         """Moves that move the limb the previous move already moved. Legal, but weak beta."""
         return sum(a.moving_limb == b.moving_limb for a, b in zip(self.moves, self.moves[1:]))
@@ -121,12 +130,13 @@ class Plan:
             "examined": self.examined,
             "executed": len(self.moves),
             "valid_move_rate": round(self.valid_move_rate, 3),
+            "forced": self.forced,
             "repeated_limb": self.repeated_limb,
             "backtracks": self.backtracks,
             "moves": [
                 {"moving_limb": m.moving_limb, "from_hold_id": m.from_hold_id,
-                 "target_hold_id": m.target_hold_id, "reason": m.reason, "pose": m.pose,
-                 **m.targets()}
+                 "target_hold_id": m.target_hold_id, "reason": m.reason, "forced": m.forced,
+                 "pose": m.pose, **m.targets()}
                 for m in self.moves
             ],
         }
@@ -165,15 +175,26 @@ def build_payload(scene: Scene, pose: Pose, model: ReachModel) -> dict:
     return {
         "goal": {"top_hold_id": scene.route.top_hold_id},
         "body": dict(pose),
-        "limits": {"hand_step": model.hand_step, "foot_step": model.foot_step},
+        "limits": {"hand_step": model.hand_step, "foot_step": model.foot_step,
+                   "max_span": model.max_span},
         "holds": [{"id": scene.hold(hid).id, "position": list(scene.hold(hid).position)}
                   for hid in scene.route.hold_ids],
     }
 
 
-def validate(move: dict, scene: Scene, pose: Pose, cands: dict[str, list[int]]) -> str | None:
+def validate(move: dict, scene: Scene, pose: Pose, model: ReachModel = ReachModel(),
+             skip_filters: bool = False) -> str | None:
     """docs/04's checks against the pose the move is issued from. Returns why it is not available,
-    or None."""
+    or None.
+
+    Takes the reach model rather than a candidate list: the list is built for a prompt, capped at
+    `max_per_limb` and sorted by progress, so checking against it called the seventh-nearest hold
+    unreachable and reported every geometric refusal as a distance one.
+
+    `skip_filters` waives every climbing rule -- route membership, occupancy, reach, posture -- and
+    keeps only what the replay cannot run without: a limb it can move and a hold that exists on
+    this wall.
+    """
     limb = move.get("moving_limb")
     if limb not in LIMBS:
         return f"moving_limb must be one of {list(LIMBS)}"
@@ -181,6 +202,10 @@ def validate(move: dict, scene: Scene, pose: Pose, cands: dict[str, list[int]]) 
         hold_id = int(move["target_hold_id"])
     except (KeyError, TypeError, ValueError):
         return "target_hold_id must be an integer hold id"
+    if not any(hold.id == hold_id for hold in scene.holds):
+        return f"hold {hold_id} is not on this wall"
+    if skip_filters:
+        return None
     if hold_id not in scene.route.hold_ids:
         return f"hold {hold_id} is not on the route"
     if pose[limb] == hold_id:
@@ -191,8 +216,9 @@ def validate(move: dict, scene: Scene, pose: Pose, cands: dict[str, list[int]]) 
         others = [l for l in LIMBS if l != limb and pose[l] == hold_id]
         return (f"hold {hold_id} is held by {' and '.join(others)}; moving {limb} there would leave "
                 f"all four limbs on two holds, which is not a position you can hang in")
-    if hold_id not in cands.get(limb, []):
-        return f"hold {hold_id} is out of reach for {limb} from hold {pose[limb]}"
+    why = rejection(scene, pose, limb, hold_id, model)
+    if why:
+        return f"{limb} cannot take hold {hold_id} -- {why}"
     return None
 
 
@@ -203,6 +229,7 @@ def plan(
     model: ReachModel = ReachModel(),
     max_moves: int = 60,
     with_image: bool = True,
+    skip_filters: bool = False,
     on_step=None,
 ) -> Plan:
     """One request for the whole sequence, then replay it move by move.
@@ -210,6 +237,12 @@ def plan(
     The reach filter is still the referee -- it just no longer tells the model the answer. There is
     no retry and no greedy fallback: the first move it rejects ends the plan, which is where the RL
     controller would stop too. `on_step(index, move)` is called for each move that executed.
+
+    `skip_filters` runs the whole sequence with the referee switched off -- no route, occupancy,
+    reach or posture check -- so a sequence that dies on move 3 can still be read to the end. The
+    moves that only ran because of it are flagged (`Move.forced`, counted by `Plan.forced`) and the
+    model is told the real `limits` either way. A plan with the filters off proves nothing about
+    what the climber can do: leave it off for anything being measured.
     """
     pose = dict(pose or initial_pose(scene))
     result = Plan(moves=[], reached_top=False, model=getattr(chooser, "name", "unknown"))
@@ -220,15 +253,16 @@ def plan(
     result.proposed = len(proposed)
 
     for index, step in enumerate(proposed, start=1):
-        error = validate(step, scene, pose, candidates(scene, pose, model))
+        error = validate(step, scene, pose, model, skip_filters)
         result.examined += 1
         if error:
             result.stopped = f"move {index} unusable: {error}"
             break
+        forced = skip_filters and validate(step, scene, pose, model) is not None
         limb = step["moving_limb"]
         came_from = pose[limb]
         pose[limb] = int(step["target_hold_id"])
-        move = Move(limb, pose[limb], came_from, step.get("reason", ""), dict(pose))
+        move = Move(limb, pose[limb], came_from, step.get("reason", ""), dict(pose), forced)
         result.moves.append(move)
         if on_step:
             on_step(index, move)
