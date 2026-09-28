@@ -38,8 +38,12 @@ def check_scene():
         # consecutive-gap check stopped meaning anything. What the generator still promises is that
         # the climb connects: start to top in max_reach steps.
         assert _connected(scene, MAX_REACH + 1e-6), f"wall {seed}: top hold unreachable from the start"
-        assert any(p[1] < scene.position(scene.route.start_hold_ids[0])[1] for p in positions), \
-            f"wall {seed}: nothing below the start hold for the feet"
+        # Two, not one: the climber starts with a foot on each, and initial_pose takes the two
+        # lowest non-start holds -- with one hold down there the second foot lands above the hands
+        # (seed 10 did exactly that). RandomWallGenerator.EnsureFootHolds is what promises this.
+        start_y = min(scene.position(hid)[1] for hid in scene.route.start_hold_ids)
+        below = [p for p in positions if p[1] < start_y - 1e-9]
+        assert len(below) >= 2, f"wall {seed}: {len(below)} holds below the start line, need two feet"
         for x, y in positions:
             assert 0 <= x <= scene.width and 0 <= y <= scene.height
         assert Scene.from_dict(scene.to_dict()).to_dict() == scene.to_dict(), "scene JSON round-trip"
@@ -64,6 +68,8 @@ def check_candidates():
     for seed in WALLS:
         scene = wall(seed)
         pose = initial_pose(scene)
+        # The start stance stands, before anything else: both feet under both hands.
+        assert rise(scene, pose) > 0, f"wall {seed}: the start pose has a foot above a hand"
         # The hands start on the start holds -- matched on the one hold when the route names one, and
         # left hand on the left one when it names two (initial_pose orders them by x, not by id).
         starts = sorted(scene.route.start_hold_ids[:2], key=lambda hid: scene.position(hid)[0])

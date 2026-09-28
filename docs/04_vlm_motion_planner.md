@@ -134,7 +134,15 @@ crossing은 같은 날 반대로 조였다(위). 둘이 부딪히는 자리가 �
 **그래서 생성기가 절반의 벽에 start 홀드를 두 개 놓는다**
 (`twoStartHoldsChance` 0.5, 2026-09-28). 두 홀드는 같은 높이에 spacing 하나
 간격이라 손이 어깨너비로 출발한다. 지금 익스포트(50벽)에서는 25벽이 두 개이고,
-초기 pose에서 발에 후보가 있는 벽이 **34/50**이다.
+초기 pose에서 발에 후보가 있는 벽이 **35/50**이다.
+
+**start 라인 아래 홀드 두 개는 생성기가 보장한다**(`EnsureFootHolds`,
+2026-09-28). 하나뿐이면 `initial_pose`가 두 번째 발을 **손보다 위**에 올린다 ---
+seed 10이 그랬다(start 1.3 m, 아래 홀드는 0.5 m 하나, 남은 최저 홀드가 1.8 m).
+spline bake가 spacing을 길게 뽑으면 아래가 비므로, 모자란 만큼 가장 낮은 홀드
+밑으로 spacing 하나씩 더 놓는다(`footHoldFloorY` 0.15 m 아래로는 안 내려가고,
+자리가 없으면 옆에 놓는다). selftest가 두 가지를 본다 --- 아래 홀드가 둘 이상인지,
+그리고 초기 pose의 `rise`가 양수인지(발이 두 손 아래).
 
 추후 개선: - limb별 reach ellipse - torso orientation 반영 - joint limit
 기반 IK feasibility test - learned reachability model
