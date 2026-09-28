@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using ClimbingBot.Testing;
@@ -10,11 +9,13 @@ namespace ClimbingBot.Training
 {
     /// <summary>
     /// Stage 1 episode setup (docs/05): the climber starts in one fixed stance with all four limbs
-    /// grasping, and one limb is told to move to one reachable hold above or beside it.
+    /// grasping, and one limb is told to move to one reachable hold above or beside it. One move is
+    /// the whole episode.
     ///
     /// This is the environment, not the agent. It decides what an episode looks like -- wall, start
     /// pose, which limb, which target -- and says whether the target was reached. Observations,
-    /// rewards and actions belong to ClimbingAgent and are deliberately not here.
+    /// rewards and actions belong to ClimbingAgent and are deliberately not here. The stance, the
+    /// two-bone IK and the debug view are shared with Stage 2 and live in ClimbEnvironment.
     ///
     /// The stance comes first and the holds follow it. Picking four holds and solving for a pose
     /// that reaches all of them is a much harder problem than posing the body and putting a hold
@@ -22,12 +23,9 @@ namespace ClimbingBot.Training
     /// body decide. That also makes the four-limb grasp succeed by construction rather than by
     /// landing inside graspRadius by luck.
     /// </summary>
-    public class Stage1Environment : MonoBehaviour
+    public class Stage1Environment : ClimbEnvironment
     {
-        [Header("Scene")]
-        public ClimberRagdoll ragdoll;
-        public ClimbingWall wall;
-
+        [Header("Wall")]
         [Tooltip("Stage 1 needs holds all around the climber, so the generator is the scattered one by type. A route wall would leave nothing to reach sideways.")]
         public ScatteredWallGenerator generator;
 
@@ -57,29 +55,6 @@ namespace ClimbingBot.Training
         [Range(0.3f, 1f)]
         public float reachFraction = 0.95f;
 
-        [Header("Debug view")]
-        [Tooltip("Colour of the hold the commanded limb has to reach. Nothing observes it -- this is for watching a run, not an input to the agent.")]
-        public Color targetHoldColor = new Color(1f, 0.42f, 0.1f);
-
-        [Tooltip("The wall flashes this colour when the commanded limb lands its target.")]
-        public Color successFlashColor = new Color(0.25f, 0.85f, 0.35f);
-
-        [Tooltip("How long the success flash lasts, in real seconds. 0 turns it off.")]
-        public float successFlashSeconds = 0.5f;
-
-        public Limb TargetLimb { get; private set; }
-        public Hold TargetHold { get; private set; }
-
-        /// <summary>True once the commanded limb is grasping the hold it was told to move to.</summary>
-        public bool IsTargetReached => TargetHold != null && ragdoll.GraspedHold(TargetLimb) == TargetHold;
-
-        static readonly Limb[] k_Limbs = { Limb.LeftHand, Limb.RightHand, Limb.LeftFoot, Limb.RightFoot };
-        static readonly int k_BaseColor = Shader.PropertyToID("_BaseColor");
-
-        Renderer m_Slab;
-        MaterialPropertyBlock m_Block;
-        Coroutine m_Flash;
-
 #if ODIN_INSPECTOR
         [Button("Reset episode (random seed)")]
 #else
@@ -95,7 +70,7 @@ namespace ClimbingBot.Training
         /// Returns false if no reachable target existed, which leaves the stance standing -- the
         /// caller should retry with another seed.
         /// </summary>
-        public bool ResetEpisode(int seed)
+        public override bool ResetEpisode(int seed)
         {
             // The episode that just ended is still standing here -- OnEpisodeBegin runs inside
             // EndEpisode, and PoseOnWall below is what lets go of the grips. So this is the one
@@ -109,7 +84,7 @@ namespace ClimbingBot.Training
             var stance = StanceTargets();
 
             var anchors = new List<Vector2>();
-            foreach (var limb in k_Limbs)
+            foreach (var limb in ClimberRagdoll.Limbs)
             {
                 var local = wall.transform.InverseTransformPoint(stance[limb]);
                 anchors.Add(new Vector2(local.x, local.y));
@@ -123,60 +98,7 @@ namespace ClimbingBot.Training
                 return false;
             }
 
-            // Generate() paints every hold normalColor on the way in, so this needs no undo.
-            TargetHold.color = targetHoldColor;
-            TargetHold.ApplyColor();
             return true;
-        }
-
-        /// <summary>
-        /// Tints the wall slab for a moment so a success is visible while watching a run. Uses a
-        /// MaterialPropertyBlock rather than Renderer.material: the 16 training areas share one
-        /// material and .material would instantiate a copy per area.
-        /// </summary>
-        void FlashSuccess()
-        {
-            if (successFlashSeconds <= 0f)
-            {
-                return;
-            }
-
-            if (m_Slab == null)
-            {
-                var slab = wall.transform.Find("Slab");
-                m_Slab = slab == null ? null : slab.GetComponent<Renderer>();
-                if (m_Slab == null)
-                {
-                    return;
-                }
-            }
-
-            if (m_Flash != null)
-            {
-                StopCoroutine(m_Flash);
-            }
-
-            m_Flash = StartCoroutine(Flash());
-        }
-
-        IEnumerator Flash()
-        {
-            if (m_Block == null)
-            {
-                m_Block = new MaterialPropertyBlock();
-            }
-
-            m_Slab.GetPropertyBlock(m_Block);
-            m_Block.SetColor(k_BaseColor, successFlashColor);
-            m_Slab.SetPropertyBlock(m_Block);
-
-            // Realtime, not scaled: training runs at time_scale 20, where half a second of game
-            // time is 25 ms and the flash would be over before a frame draws it.
-            yield return new WaitForSecondsRealtime(successFlashSeconds);
-
-            // null clears the override, so the slab goes back to the material's own colour.
-            m_Slab.SetPropertyBlock(null);
-            m_Flash = null;
         }
 
         /// <summary>World positions the four limb endpoints should occupy, all on the wall face.</summary>
@@ -193,79 +115,21 @@ namespace ClimbingBot.Training
             };
         }
 
+        /// <summary>
+        /// The generator put a hold on every stance anchor, so the hold nearest each stance point is
+        /// exactly that point. PoseOn's return value is ignored on purpose: Stage 1's stance is
+        /// reachable by construction and was measured at 150/150 four-limb grasps (docs/05).
+        /// </summary>
         void PoseOnWall(Dictionary<Limb, Vector3> stance)
         {
-            ragdoll.ResetBody();
+            var holds = new Dictionary<Limb, Hold>();
+            foreach (var limb in ClimberRagdoll.Limbs)
+            {
+                holds[limb] = NearestHold(stance[limb]);
+            }
 
             var hips = wall.transform.TransformPoint(new Vector3(hipsOnWall.x, hipsOnWall.y, -hipsDistanceFromWall));
-            ragdoll.transform.position += hips - ragdoll.hips.position;
-
-            foreach (var limb in k_Limbs)
-            {
-                Reach(limb, stance[limb]);
-            }
-
-            foreach (var bp in ragdoll.JdController.bodyPartsList)
-            {
-                bp.rb.linearVelocity = Vector3.zero;
-                bp.rb.angularVelocity = Vector3.zero;
-            }
-
-            Physics.SyncTransforms();
-
-            foreach (var limb in k_Limbs)
-            {
-                ragdoll.Grasp(limb, NearestHold(stance[limb]));
-            }
-        }
-
-        /// <summary>
-        /// Cyclic coordinate descent on the limb's two bones. Cheaper to write than analytic two-link
-        /// IK and it does not care how the bones are oriented, which matters because the authored
-        /// pose is a T and every joint axis points somewhere different.
-        ///
-        /// ponytail: ignores joint limits. The offsets above are anatomically ordinary, so the
-        /// solution lands inside them; if a stance is ever authored that does not, physics resolves
-        /// it on the first step and the limb drifts off its hold. Measure before trusting a new one.
-        /// </summary>
-        void Reach(Limb limb, Vector3 target)
-        {
-            var endpoint = ragdoll.LimbTransform(limb);
-            var bones = Chain(limb);
-
-            for (var iteration = 0; iteration < 12; iteration++)
-            {
-                for (var i = bones.Length - 1; i >= 0; i--)
-                {
-                    var joint = bones[i].GetComponent<ConfigurableJoint>();
-                    if (joint == null)
-                    {
-                        continue;
-                    }
-
-                    var pivot = bones[i].TransformPoint(joint.anchor);
-                    var from = endpoint.position - pivot;
-                    var to = target - pivot;
-                    if (from.sqrMagnitude < 1e-8f || to.sqrMagnitude < 1e-8f)
-                    {
-                        continue;
-                    }
-
-                    Quaternion.FromToRotation(from.normalized, to.normalized).ToAngleAxis(out var angle, out var axis);
-                    bones[i].RotateAround(pivot, axis, angle);
-                }
-            }
-        }
-
-        Transform[] Chain(Limb limb)
-        {
-            switch (limb)
-            {
-                case Limb.LeftHand: return new[] { ragdoll.armL, ragdoll.forearmL };
-                case Limb.RightHand: return new[] { ragdoll.armR, ragdoll.forearmR };
-                case Limb.LeftFoot: return new[] { ragdoll.thighL, ragdoll.shinL };
-                default: return new[] { ragdoll.thighR, ragdoll.shinR };
-            }
+            PoseOn(hips, holds);
         }
 
         /// <summary>Root joint of the limb's chain -- the point its reach is measured from.</summary>
@@ -314,9 +178,7 @@ namespace ClimbingBot.Training
         /// </summary>
         bool PickTarget(System.Random rng)
         {
-            TargetHold = null;
-
-            var order = new List<Limb>(k_Limbs);
+            var order = new List<Limb>(ClimberRagdoll.Limbs);
             for (var i = order.Count - 1; i > 0; i--)
             {
                 var j = rng.Next(i + 1);
@@ -333,11 +195,13 @@ namespace ClimbingBot.Training
                     continue;
                 }
 
-                TargetLimb = limb;
-                TargetHold = candidates[rng.Next(candidates.Count)];
+                // Generate() paints every hold normalColor on the way in, so the target paint that
+                // SetTarget applies needs no undo.
+                SetTarget(limb, candidates[rng.Next(candidates.Count)]);
                 return true;
             }
 
+            SetTarget(Limb.LeftHand, null);
             return false;
         }
 
@@ -380,7 +244,7 @@ namespace ClimbingBot.Training
 
         bool IsGrasped(Hold hold)
         {
-            foreach (var limb in k_Limbs)
+            foreach (var limb in ClimberRagdoll.Limbs)
             {
                 if (ragdoll.GraspedHold(limb) == hold)
                 {

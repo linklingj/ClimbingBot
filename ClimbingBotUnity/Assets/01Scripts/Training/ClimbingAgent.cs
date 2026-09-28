@@ -13,20 +13,22 @@ namespace ClimbingBot.Training
     /// walking ragdoll's own frame swings around; a climber always faces one fixed wall, so the wall
     /// is already the stabilized reference and needs no proxy object.
     ///
-    /// The episode -- wall layout, start stance, which limb, which hold -- belongs to
-    /// Stage1Environment. This class only perceives, acts and scores.
+    /// The episode -- wall layout, start stance, which limb, which hold, and whether landing a
+    /// target ends the episode or hands over the next move -- belongs to the ClimbEnvironment. This
+    /// class only perceives, acts and scores, and does not know which stage is running.
     /// </summary>
     [RequireComponent(typeof(ClimberRagdoll))]
     public class ClimbingAgent : Agent
     {
         [Header("Environment")]
-        public Stage1Environment env;
+        [Tooltip("The stage that decides what an episode is: Stage1Environment for one move per episode, Stage2Environment to follow a planned sequence.")]
+        public ClimbEnvironment env;
 
         [Header("Episode")]
         [Tooltip("Seed for the first episode. Episodes advance it, so a run is reproducible.")]
         public int episodeSeed;
 
-        [Tooltip("How far the hips may fall below their start height before the episode is a failure (m).")]
+        [Tooltip("How far the hips may fall below the height they were at when this move began before the episode is a failure (m).")]
         public float maxDrop = 1.0f;
 
         [Tooltip("How far the hips may drop before the soft dropPenalty starts (m). Below maxDrop's hard cutoff -- this is graduated, that one is terminal.")]
@@ -60,6 +62,9 @@ namespace ClimbingBot.Training
         [Tooltip("Per physics step, on the squared joint targets. Left at 0: an energy penalty early in training suppresses the exploration that finds the move at all. Turn it up if the learned motion looks twitchy.")]
         public float energyPenalty;
 
+        [Tooltip("Physics steps one move may take before the episode is cut short. 0 leaves timing to Agent.MaxStep, which is one move per episode (Stage 1). Stage 2 needs this instead: MaxStep would end the route partway up, and this restarts it from the bottom on the move that stalled.")]
+        public int moveMaxSteps;
+
         [Header("Curriculum")]
         [Tooltip("Stage 1 holds the other three limbs on their holds -- docs/05 defines the stage as 'one limb moves, the others are fixed'. Their grasp branches are masked to 'no change'. Turn this off for Stage 2.")]
         public bool lockSupportLimbs = true;
@@ -67,9 +72,6 @@ namespace ClimbingBot.Training
         ClimberRagdoll m_Ragdoll;
         JointDriveController m_Jd;
         System.Random m_Rng;
-        // Indexed by (int)Limb throughout, never by action-branch index. The two happen to agree
-        // today; relying on that would break the moment a limb is added or reordered.
-        readonly Hold[] m_Assigned = new Hold[4];
         // Closest the commanded limb has ever been to its target this episode. Progress is paid
         // off this ratchet, not off the last step, so an attempt can never score worse than
         // standing still.
@@ -83,6 +85,7 @@ namespace ClimbingBot.Training
         // outcome still pending at the next OnEpisodeBegin was a timeout.
         Limb m_PendingLimb;
         bool m_Pending;
+        int m_MoveStartStep;
 
         public override void Initialize()
         {
@@ -96,9 +99,19 @@ namespace ClimbingBot.Training
             {
                 // Without this the first episode dies inside OnEpisodeBegin with a bare
                 // NullReferenceException that says nothing about which field was left empty.
-                Debug.LogError("ClimbingAgent.env is not set. Assign the Stage1Environment "
-                    + "component (it lives on the ClimbingWall) in the inspector.", this);
+                Debug.LogError("ClimbingAgent.env is not set. Assign the Stage1Environment or "
+                    + "Stage2Environment component (it lives on the ClimbingWall) in the inspector.", this);
                 enabled = false;
+            }
+
+            if (moveMaxSteps > 0 && MaxStep > 0)
+            {
+                // Otherwise MaxStep silently wins and a Stage 2 route is cut off at the same step
+                // count as a Stage 1 move, which looks exactly like the climber never getting past
+                // the first hold.
+                Debug.LogWarning($"ClimbingAgent has both moveMaxSteps ({moveMaxSteps}) and "
+                    + $"MaxStep ({MaxStep}) set; whichever is smaller ends the episode. Set MaxStep "
+                    + "to 0 when a per-move budget is what you want.", this);
             }
         }
 
@@ -120,20 +133,26 @@ namespace ClimbingBot.Training
 
             if (!m_Ready)
             {
-                Debug.LogWarning("Stage1Environment found no reachable target in 8 tries; check its filters.");
+                Debug.LogWarning("env.ResetEpisode failed 8 times; no episode is running. Check the "
+                    + "environment's own warnings above for why.", this);
                 return;
             }
 
-            foreach (var limb in ClimberRagdoll.Limbs)
-            {
-                m_Assigned[(int)limb] = m_Ragdoll.GraspedHold(limb);
-            }
+            BeginMove();
+        }
 
-            m_Assigned[(int)env.TargetLimb] = env.TargetHold;
+        /// <summary>
+        /// Starts scoring one commanded move. Everything here is per move, not per episode: Stage 2
+        /// runs many of these in one episode, and a drop or a clear time measured from the bottom of
+        /// the route would mean nothing by the top of it.
+        /// </summary>
+        void BeginMove()
+        {
             m_BestDistance = TargetDistance();
             m_ReleasePaid = false;
             m_StartHipsY = m_Ragdoll.hips.position.y;
             m_StartTime = Time.fixedTime;
+            m_MoveStartStep = StepCount;
             m_PendingLimb = env.TargetLimb;
             m_Pending = true;
         }
@@ -183,7 +202,7 @@ namespace ClimbingBot.Training
             // fixed is what lets Stage 3 reuse these weights (docs/05).
             foreach (var limb in ClimberRagdoll.Limbs)
             {
-                var assigned = m_Assigned[(int)limb];
+                var assigned = env.AssignedHold(limb);
                 var commanded = limb == env.TargetLimb;
                 var offset = assigned == null
                     ? Vector3.zero
@@ -250,7 +269,7 @@ namespace ClimbingBot.Training
 
                 // Grasping is only offered within reach of this limb's own hold -- the action never
                 // picks a hold, so there is nothing to search and nothing to teleport to.
-                mask.SetActionEnabled(branch, 1, m_Ragdoll.CanGrasp(limb, m_Assigned[(int)limb]));
+                mask.SetActionEnabled(branch, 1, m_Ragdoll.CanGrasp(limb, env.AssignedHold(limb)));
                 mask.SetActionEnabled(branch, 2, m_Ragdoll.IsGrasping(limb));
             }
         }
@@ -310,7 +329,7 @@ namespace ClimbingBot.Training
                 var limb = ClimberRagdoll.Limbs[branch];
                 if (d[branch] == 1)
                 {
-                    m_Ragdoll.Grasp(limb, m_Assigned[(int)limb]);
+                    m_Ragdoll.Grasp(limb, env.AssignedHold(limb));
                 }
                 else if (d[branch] == 2)
                 {
@@ -361,6 +380,14 @@ namespace ClimbingBot.Training
         {
             if (!m_Ready)
             {
+                // Nothing was set up, so there is nothing to score -- but the episode still has to
+                // end, or this agent sits out the whole run in silence. MaxStep does it when it is
+                // set; with a per-move budget instead, this does.
+                if (moveMaxSteps > 0 && StepCount >= moveMaxSteps)
+                {
+                    EpisodeInterrupted();
+                }
+
                 return;
             }
 
@@ -433,7 +460,18 @@ namespace ClimbingBot.Training
             {
                 AddReward(successReward);
                 RecordOutcome(true);
-                EndEpisode();
+
+                // Stage 1 has one move per episode and says no here. Stage 2 hands over the next
+                // move in the plan and the episode keeps running up the wall.
+                if (env.AdvanceTarget())
+                {
+                    BeginMove();
+                }
+                else
+                {
+                    EndEpisode();
+                }
+
                 return;
             }
 
@@ -442,6 +480,16 @@ namespace ClimbingBot.Training
                 AddReward(fallPenalty);
                 RecordOutcome(false);
                 EndEpisode();
+                return;
+            }
+
+            if (moveMaxSteps > 0 && StepCount - m_MoveStartStep >= moveMaxSteps)
+            {
+                // Interrupted, not ended: a move that ran out of time is not a terminal state, so
+                // the value function should bootstrap from it rather than learn that this pose is
+                // worth zero. Same thing Agent.MaxStep does, which is what times Stage 1 out.
+                RecordOutcome(false);
+                EpisodeInterrupted();
             }
         }
     }

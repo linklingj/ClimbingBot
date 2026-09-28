@@ -10,19 +10,21 @@ Phase 1 (RL Controller) 진행 중, Phase 2 (VLM Planner) 착수.
 
 ```
 ClimbingBotUnity/Assets/
-  00Scenes/Train.unity        학습 씬 (벽 + ragdoll + 바닥)
+  00Scenes/Train.unity        Stage 1 학습 씬 (벽 + ragdoll + 바닥, 16영역)
+  00Scenes/Train2.unity       Stage 2 학습 씬 (같은 링, Stage2Environment)
   01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
   01Scripts/Wall/             ClimbingWall, Hold, IWallGenerator
   01Scripts/Testing/          수동 조작 도구, 벽 생성기 둘. 전부 버릴 코드다
-  01Scripts/Training/         ClimbingAgent, Stage1Environment
+  01Scripts/Training/         ClimbingAgent, ClimbEnvironment, Stage1/Stage2Environment
   02Ragdoll/                  ragdoll FBX / prefab / 머티리얼
   03Prefabs/                  Hold 프리팹
   04Materials/                벽·홀드 머티리얼
 ```
 
 끝난 것: ragdoll, grasp/release, 벽과 홀드, 벽 생성기 둘(spline 루트 /
-산포), 클리어 판정, Stage 1 에피소드 구성, `ClimbingAgent`.
-다음: Stage 1 학습을 실제로 돌려 보상/자세를 조정.
+산포), 클리어 판정, Stage 1 에피소드 구성과 학습(stage1-05), `ClimbingAgent`,
+Stage 2 에피소드 구성(plan 시퀀스를 따라가는 `Stage2Environment`).
+다음: stage1-05에서 이어 Stage 2를 돌려 완등률(`Route/Completed`)을 본다.
 
 ```
 src/vlm/                    candidate generator, VLM planner, 합성 Scene JSON
@@ -37,12 +39,17 @@ output, planner 두 가지(기본은 move마다 재계획하는 루프, `--onesh
 **학습 실행**
 
 ```
-pip install mlagents                        # 아직 설치되어 있지 않다
-mlagents-learn config/climbing_stage1.yaml --run-id=stage1-01
+mlagents-learn config/climber.yaml --run-id=stage1-06                          # Stage 1: Train.unity
+mlagents-learn config/climber.yaml --run-id=stage2-01 --initialize-from=stage1-05-5M   # Stage 2: Train2.unity
 ```
 
-프롬프트가 뜨면 에디터에서 Play. `Run In Background`가 꺼져 있으면 에디터가
-포커스를 잃는 순간 플레이 루프가 멈춘다.
+프롬프트가 뜨면 **해당 씬을 열고** 에디터에서 Play --- Stage 1은 `Train.unity`,
+Stage 2는 `Train2.unity`다. behavior 이름(`Climber`)이 같으므로 config는 하나를
+공유한다. `Run In Background`가 꺼져 있으면 에디터가 포커스를 잃는 순간 플레이
+루프가 멈춘다.
+
+Stage 2는 `out/<run>-seed<N>/`의 plan + scene JSON을 읽어 올라간다. 랜덤 벽도
+API 호출도 없다.
 
 **VLM 실행**
 
