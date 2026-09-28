@@ -36,13 +36,16 @@ HARD RULES
 - Finish with BOTH hands on `goal.top_hold_id`; the route is cleared when the second hand matches.
 
 CHOOSE LIKE A CLIMBER
-- Hang from a wide triangle. The three limbs that stay put should spread out, not bunch onto
-  neighbouring holds and not line up. Picture that triangle before you commit.
-- Stay open: hands above the feet, arms straight, hips in, weight on the feet.
+- MOVE THE LIMB THAT IS BEHIND. Between the two hands, and between the two feet, the lower one goes
+  first: never reach again with the hand that is already the highest, and never lift the higher foot
+  while the other is still low. Bring the pair level, then gain height with it.
+- TAKE THE NEAREST CANDIDATE THAT GAINS HEIGHT, not the highest one you can reach. A short move you
+  stay in balance for beats a long stretch -- the higher hold is still there next move.
 - Feet first. If the hand move is long, bring a foot up and take the hold next move.
+- Hang from a wide triangle: the three limbs that stay put spread out, not bunched onto neighbouring
+  holds and not in a line. Stay open -- arms straight, hips in, weight on the feet.
 - Alternate. From `history`: do not move the same limb twice in a row, and never step back onto the
-  hold you just left.
-- Gain height, or set up the move that does. Prefer the move that leaves something in reach.
+  hold you just left. Prefer the move that leaves the next one available.
 
 `reason`: one short sentence, written before you commit, naming what makes the move stable."""
 
@@ -69,10 +72,15 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
   that the second hand can follow.
 
 CHOOSE LIKE A CLIMBER
-- Hang from a wide triangle, never bunched onto neighbouring holds and never lined up.
-- Keep 1 to 1.5 m between hands and feet: open body, hips in, weight on the feet.
+- MOVE THE LIMB THAT IS BEHIND. Between the two hands, and between the two feet, the lower one goes
+  first: never reach twice in a row with the hand that is already the highest, and never lift the
+  higher foot while the other is still low. Bring the pair level, then gain height with it.
+- TAKE THE NEAREST HOLD THAT GAINS HEIGHT, not the highest one in range. A short move you stay in
+  balance for beats a long stretch -- the higher hold is still there for the next move.
 - Feet first, alternate limbs, and never step back onto the hold you just left.
-- Every move gains height or sets up the one that does.
+- Hang from a wide triangle, never bunched onto neighbouring holds and never lined up. Keep 1 to
+  1.5 m between hands and feet: hips in, weight on the feet.
+- Every move gains height or sets up the one that does, and leaves a next move available.
 
 `reason`: one short sentence, written before you commit, naming what makes the move stable."""
 
