@@ -56,6 +56,9 @@ namespace ClimbingBot.Testing
         [Tooltip("Upper bound on the distance between consecutive holds.")]
         public float maxReach;
 
+        [Tooltip("Lowest a generated foot hold may sit. The wall's floor is at 0, and a hold on the floor is not something to stand on.")]
+        public float footHoldFloorY = 0.15f;
+
         [Header("Foot holds")]
         [Tooltip("Second pass down the same curve, this far lower. One line of holds makes the feet fight the hands for it. 0 turns the pass off.")]
         public float footDropY = 1f;
@@ -113,6 +116,7 @@ namespace ClimbingBot.Testing
             route.Sort((a, b) => a.position.y.CompareTo(b.position.y));
             BridgeGaps(route);
             AddFootHolds(wall, container, route, seed);
+            EnsureFootHolds(wall, route, rng);
             route.Sort((a, b) => a.position.y.CompareTo(b.position.y));
 
             for (var i = 0; i < route.Count; i++)
@@ -252,6 +256,42 @@ namespace ClimbingBot.Testing
                 }
 
                 i++;
+            }
+        }
+
+        /// <summary>
+        /// Two holds below the start line, always. The climber leaves the ground with both feet under
+        /// the start hold, and src/vlm candidates.initial_pose takes the two lowest holds that are not
+        /// starts -- with only one down there it stands a foot *above* the hands, which is what seed 10
+        /// did. The spline bake leaves one whenever the spacing draws long, so this fills the gap.
+        /// </summary>
+        void EnsureFootHolds(ClimbingWall wall, List<(Vector2 position, HoldRole role)> route,
+            System.Random rng)
+        {
+            while (route.FindAll(hold => hold.position.y < startHoldY - 1e-4f).Count < 2)
+            {
+                var lowest = route[0].position;
+                foreach (var hold in route)
+                {
+                    if (hold.position.y < lowest.y) lowest = hold.position;
+                }
+
+                // Stepping down from the start line rather than from the lowest hold when that hold is
+                // itself above the line: either way the new hold lands below it, so this terminates.
+                var from = Mathf.Min(lowest.y, startHoldY);
+                var gap = (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing));
+                var jitter = Mathf.Min(positionOffsetX, Mathf.Max(0f, (maxReach - maxHoldSpacing) * 0.5f));
+                var x = lowest.x + (float)(rng.NextDouble() * 2.0 - 1.0) * jitter;
+                var y = from - gap;
+                if (y < footHoldFloorY)
+                {
+                    // No room underneath: the foot hold goes beside the lowest one instead of under it.
+                    y = Mathf.Max(from, footHoldFloorY);
+                    x = lowest.x + gap <= wall.width - sideMargin ? lowest.x + gap : lowest.x - gap;
+                }
+
+                route.Add((new Vector2(Mathf.Clamp(x, sideMargin, wall.width - sideMargin), y),
+                    HoldRole.Normal));
             }
         }
 
