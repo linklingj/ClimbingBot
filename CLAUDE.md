@@ -40,7 +40,7 @@ output, planner 두 가지(기본은 move마다 재계획하는 루프, `--onesh
 
 ```
 mlagents-learn config/climber.yaml --run-id=stage1-06                          # Stage 1: Train.unity
-mlagents-learn config/climber.yaml --run-id=stage2-01 --initialize-from=stage1-05-5M   # Stage 2: Train2.unity
+mlagents-learn config/climber.yaml --run-id=stage2-02 --initialize-from=stage1-05-5M   # Stage 2: Train2.unity
 ```
 
 프롬프트가 뜨면 **해당 씬을 열고** 에디터에서 Play --- Stage 1은 `Train.unity`,
@@ -49,7 +49,9 @@ Stage 2는 `Train2.unity`다. behavior 이름(`Climber`)이 같으므로 config�
 루프가 멈춘다.
 
 Stage 2는 `out/<run>-seed<N>/`의 plan + scene JSON을 읽어 올라간다. 랜덤 벽도
-API 호출도 없다.
+API 호출도 없다. 현재 `Train2.unity`는 **`out/test5-seed`, 50 시퀀스**를 가리키고
+그중 48개가 쓰인다(wall 13·22는 plan이 완등을 못 해 빠진다). `stage2-01`은 test4
+plan으로 2.24M 스텝까지 이미 돌린 run-id라 새 런은 `stage2-02`부터다.
 
 **VLM 실행**
 

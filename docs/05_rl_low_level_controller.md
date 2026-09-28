@@ -246,7 +246,7 @@ raw force를 걸 뿐이라 `ClimbingAgent`의 joint target과 무관하다.
 | Stage | 목표 | 벽 |
 |---|---|---|
 | 1 --- Single Limb Target | 균형 유지·관절 제어 안정화. 다른 limb 고정, 하나만 랜덤 target으로 | `ScatteredWallGenerator`(루트 없음). 종료는 탑아웃이 아니라 목표 홀드 grasp |
-| 2 --- Planned Route Climbing | pose-to-pose transition 학습, target pose 연속 제공 | `RandomWallGenerator`로 내보낸 `walls/wall_NNN.json` 20장 + 각 벽의 VLM plan(`out/<run>-seed<N>/`) |
+| 2 --- Planned Route Climbing | pose-to-pose transition 학습, target pose 연속 제공 | `RandomWallGenerator`로 내보낸 `walls/wall_NNN.json` 50장 + 각 벽의 VLM plan(`out/<run>-seed<N>/`, 현재 `test5`) |
 | 3 --- Planner Integration | VLM이 생성한 target pose 수행 | 실제 CV 출력 |
 
 ## 벽과 홀드
@@ -452,7 +452,12 @@ grasp 150/150, 타깃 limb 분포가 고르다.
     생성 중), `reached_top`이 false거나, plan이 자기 벽에 없는 홀드를
     가리키거나, 마지막 pose가 양손 top이 아니거나(그러면 완등률이 탑아웃
     비율이 아니게 된다), 시작 자세가 리치 밖이면 로그를 한 번 남기고 건너뛴다.
-    파싱 결과는 세션 단위로 캐시한다(16영역 × 20시퀀스를 매번 다시 읽지 않게).
+    파싱 결과는 세션 단위로 캐시한다(16영역 × 50시퀀스를 매번 다시 읽지 않게).
+
+    **현재 씬 설정(2026-09-29): `sequencePrefix = out/test5-seed`,
+    `sequenceCount = 50`.** 50개 중 **48개가 쓰인다** --- test5에서 wall 13과 22가
+    완등하지 못해 `requireReachedTop`에 걸린다(play mode에서 skip 로그 확인).
+    docs/04의 test5 절이 그 두 벽이 왜 막혔는지 적고 있다.
 -   **시작 자세는 plan이 정한다.** move 0의 `pose`에서 움직이는 limb만
     `from_hold_id`로 되돌리면 그게 루트의 첫 자세다. hips는 손 중점과 발
     중점 사이 `hipsBias`(0.58) 위치에 둔다 --- Stage 1의 실측 자세(손 +0.42,

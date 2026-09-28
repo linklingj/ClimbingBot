@@ -21,11 +21,11 @@ namespace ClimbingBot.Training
     public class Stage2Environment : ClimbEnvironment
     {
         [Header("Sequences")]
-        [Tooltip("Directory prefix of the planner run, relative to the repo root. The sequence index is appended, so out/test4-seed is out/test4-seed0 .. out/test4-seed19.")]
-        public string sequencePrefix = "out/test4-seed";
+        [Tooltip("Directory prefix of the planner run, relative to the repo root. The sequence index is appended, so out/test5-seed is out/test5-seed0 .. out/test5-seed49.")]
+        public string sequencePrefix = "out/test5-seed";
 
-        [Tooltip("How many sequences exist. Episodes cycle 0..count-1.")]
-        public int sequenceCount = 20;
+        [Tooltip("How many sequences exist. Episodes cycle 0..count-1. Sequences whose plan never topped out are skipped, so the usable count can be lower (test5: 48 of 50).")]
+        public int sequenceCount = 50;
 
         [Tooltip("Which sequence this area starts on. Set it differently per area (0..15, like ClimbingAgent.episodeSeed) or every area climbs the same wall at the same time and the samples are correlated.")]
         public int firstSequence;
