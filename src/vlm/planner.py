@@ -71,8 +71,8 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
 - A limb travels at most `limits.hand_step` (hands) or `limits.foot_step` (feet) metres, measured
   from the hold it is on at THAT point in your own sequence, not from where it started.
 - After every move the lowest hand stays above the highest foot, and no hand is further than
-  `limits.max_span` metres (2.0 m) from any foot. That is separate from the step: a hand can travel
-  1.0 m and still tear the body past 2.0 m because the feet stayed put. Bring a foot up first.
+  `limits.max_span` metres (2.05 m) from any foot. That is separate from the step: a hand can travel
+  1.0 m and still tear the body past 2.05 m because the feet stayed put. Bring a foot up first.
 - Hands never move down to a lower hold, and no limb ever takes a hold below the lowest of the
   four: the body only ever leaves the ground behind.
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.

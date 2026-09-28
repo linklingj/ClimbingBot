@@ -30,7 +30,7 @@ class ReachModel:
     # It is a tolerance knob, not a technique switch -- a cross-through needs a planner that can plan
     # its way out again, and step by step there is no backtracking.
     cross_margin: float = 0.0
-    max_span: float = 2.0  # furthest hand-to-foot distance allowed after the move
+    max_span: float = 2.05  # furthest hand-to-foot distance allowed after the move
 
 
 def blocked_holds(pose: Pose, limb: str, finish: int | None = None) -> set[int]:

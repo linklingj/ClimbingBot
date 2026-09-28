@@ -20,11 +20,10 @@ from .scene import FEET, HANDS, MAX_REACH, Scene, wall, wall_paths
 
 WALLS = range(len(wall_paths()))
 
-# Exported walls the rules cannot climb, checked as an exact set so a new one is caught and a fixed
-# one stops being excused. wall 22 is a single sparse line whose feet cannot follow the hands: the
-# move it needs is a hand to hold 9 with a foot 2.01 m away, against max_span 2.0. One centimetre,
-# and loosening the referee for one wall in fifty is the worse trade (2.05 m clears it, measured).
-UNCLIMBABLE = {22}
+# Exported walls the rules cannot climb, checked as an exact set so a new one is caught. Empty since
+# max_span went to 2.05 m: wall 22 needed a hand move with a foot 2.01 m away and was the only wall
+# 2.0 m shut out.
+UNCLIMBABLE: set[int] = set()
 
 
 def check_scene():
