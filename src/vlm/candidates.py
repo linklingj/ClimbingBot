@@ -23,9 +23,13 @@ class ReachModel:
     generator refused. Numbers from a ~1.7 m climber, not measured against the rig yet."""
 
     hand_step: float = 1.6  # how far a hand may travel in one move
-    foot_step: float = 1.2
+    foot_step: float = 1.3
     min_rise: float = 0.25  # how far the lowest hand must stay above the highest foot
-    cross_margin: float = 0.5  # how far a limb may reach past its opposite before it is crossed
+    # How far a limb may reach past its opposite before the pair counts as crossed. 0 means a left
+    # limb never sits right of its right partner (sharing one hold is still fine, x is equal then).
+    # It is a tolerance knob, not a technique switch -- a cross-through needs a planner that can plan
+    # its way out again, and step by step there is no backtracking.
+    cross_margin: float = 0.0
     max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
 
 
@@ -91,8 +95,9 @@ def rejection(scene: Scene, pose: Pose, limb: str, hold_id: int,
     crossed = x > opposite_x + model.cross_margin if limb.startswith("left") \
         else x < opposite_x - model.cross_margin
     if crossed:
-        return (f"crossed over {OPPOSITE[limb]}: x {x:.2f} m against its {opposite_x:.2f} m, past "
-                f"the {model.cross_margin:.2f} m allowance")
+        side = "left" if limb.startswith("left") else "right"
+        return (f"crossed over {OPPOSITE[limb]}: x {x:.2f} m against its {opposite_x:.2f} m, and the "
+                f"{side} limb stays on the {side}")
     span = _span(scene, {**pose, limb: hold_id})
     if span > model.max_span:
         return f"body too stretched: hand to foot {span:.2f} m against a {model.max_span:.2f} m limit"

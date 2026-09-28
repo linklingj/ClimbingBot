@@ -8,6 +8,7 @@ them, which is how a bad re-export gets caught.
 from __future__ import annotations
 
 import math
+from collections import deque
 
 from .candidates import (LIMBS, ReachModel, blocked_holds, candidates, initial_pose,
                         rejection, rise)
@@ -194,6 +195,7 @@ def check_steps():
         assert result.request_png is None, "the step planner renders per move, not once"
         for move in result.moves:
             assert len(set(move.pose.values())) >= 3, f"all four limbs on two holds: {move.pose}"
+            assert not _crossed(scene, move.pose), f"crossed limbs: {move.pose}"
             targets = move.targets()["targets"]
             assert len(targets) == 4 and sum(t["move"] for t in targets) == 1
         solved += result.reached_top
@@ -201,8 +203,58 @@ def check_steps():
             assert all(result.moves[-1].pose[hand] == scene.route.top_hold_id for hand in HANDS)
         else:
             print(f"  wall {seed}: {result.stopped}")
-    assert solved >= 18, f"greedy through the loop only solved {solved}/{len(WALLS)}"
+    # A floor on beta quality, not on the rules: `check_solvable` is what says a wall can be climbed.
+    # Greedy takes the largest gain it can see and has no way to plan an uncross, so with crossing
+    # refused outright it climbs into dead ends on a few walls (16/20 on 2026-09-28, was 20/20 when
+    # a limb could cross 0.5 m past its partner).
+    assert solved >= 15, f"greedy through the loop only solved {solved}/{len(WALLS)}"
     print(f"  greedy through the step-by-step loop reached the top on {solved}/{len(WALLS)} walls")
+
+
+def _crossed(scene, pose) -> list[str]:
+    """Limb pairs whose left member sits right of its right member. Sharing a hold is not crossed."""
+    return [left for left, right in (("left_hand", "right_hand"), ("left_foot", "right_foot"))
+            if scene.position(pose[left])[0] > scene.position(pose[right])[0]]
+
+
+def check_solvable():
+    """Every exported wall must still have a way to the top under the current rules.
+
+    This is the check the greedy solve count cannot be: greedy fails walls that are perfectly
+    climbable, so its number measures greedy. A breadth-first search over poses measures the rules --
+    if a rule change walls off a route, the shortest solution disappears here.
+    """
+    model = ReachModel()
+    lengths = []
+    for seed in WALLS:
+        scene = wall(seed)
+        top = scene.route.top_hold_id
+        start = initial_pose(scene)
+        seen = {tuple(sorted(start.items()))}
+        queue = deque([(start, 0)])
+        found = None
+        while queue and found is None:
+            pose, depth = queue.popleft()
+            if depth >= 30:  # far past the ~15 moves the walls actually need
+                continue
+            for limb in LIMBS:
+                blocked = blocked_holds(pose, limb)
+                for hold_id in scene.route.hold_ids:
+                    if hold_id in blocked or rejection(scene, pose, limb, hold_id, model):
+                        continue
+                    nxt = {**pose, limb: hold_id}
+                    if all(nxt[hand] == top for hand in HANDS):
+                        found = depth + 1
+                        break
+                    key = tuple(sorted(nxt.items()))
+                    if key not in seen:
+                        seen.add(key)
+                        queue.append((nxt, depth + 1))
+                if found:
+                    break
+        assert found, f"wall {seed}: no legal sequence reaches the top any more"
+        lengths.append(found)
+    print(f"  every wall is solvable under the rules, in {min(lengths)}-{max(lengths)} moves")
 
 
 def check_step_prompt():
@@ -345,7 +397,7 @@ def check_render():
 
 if __name__ == "__main__":
     for check in (check_scene, check_candidates, check_validator, check_step_prompt,
-                  check_aliases, check_steps, check_oneshot, check_replay,
+                  check_aliases, check_solvable, check_steps, check_oneshot, check_replay,
                   check_skip_filters, check_render):
         check()
         print(f"ok  {check.__name__}")
