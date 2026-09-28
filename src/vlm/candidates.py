@@ -84,6 +84,10 @@ def rejection(scene: Scene, pose: Pose, limb: str, hold_id: int,
                 f"{'hand' if hand else 'foot'} moves at most {step:.2f} m")
     if hand and y < here[1] - 1e-9:
         return f"hands do not climb down: hold {hold_id} is {here[1] - y:.2f} m below hold {pose[limb]}"
+    floor = min(scene.position(pose[other])[1] for other in LIMBS)
+    if y < floor - 1e-9:
+        return (f"below the whole body: hold {hold_id} at y {y:.2f} m is under the {floor:.2f} m the "
+                f"lowest limb already stands on")
     after = rise(scene, {**pose, limb: hold_id})
     # A hand above every foot is the open stance. Not an absolute floor: some start poses are already
     # under it, and refusing every move from there would strand the climber -- so a move that does

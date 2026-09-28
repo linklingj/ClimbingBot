@@ -62,7 +62,8 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
 - After every move the lowest hand stays above the highest foot, and no hand is further than
   `limits.max_span` metres (2.4 m) from any foot. That is separate from the step: a hand can travel
   1.0 m and still tear the body past 2.4 m because the feet stayed put. Bring a foot up first.
-- Hands never move down to a lower hold.
+- Hands never move down to a lower hold, and no limb ever takes a hold below the lowest of the
+  four: the body only ever leaves the ground behind.
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
 - Never cross: the left hand stays left of (or on the same hold as) the right hand, and the left foot
   stays left of the right foot. Going up a line of holds that drifts sideways means ordering the
