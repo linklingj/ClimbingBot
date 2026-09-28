@@ -105,6 +105,14 @@ def check_validator():
         assert blocked_holds(pose, hand) == {pose[hand], pose["left_foot"], pose["right_foot"]}
     for foot in FEET:
         assert blocked_holds(pose, foot) == {pose[foot], pose["left_hand"], pose["right_hand"]}
+    # The finishing match is the exception: the second hand may join the first on the top hold even
+    # though that leaves four limbs on two holds. Any other hold, and the rule still refuses it.
+    top = scene.route.top_hold_id
+    finish = {"left_hand": top, "right_hand": 0, "left_foot": 1, "right_foot": 1}
+    assert top not in blocked_holds(finish, "right_hand", top)
+    assert top in blocked_holds(finish, "right_hand"), "only the top hold gets the exemption"
+    assert finish["left_foot"] in blocked_holds(finish, "right_foot", top), "feet get no exemption"
+
     matched = {**pose, "right_hand": pose["left_hand"]}  # hands matched: three holds left
     assert len(set(matched.values())) == 3
     # A matched hand may still step off onto a free hold, but every hold in use is out: the feet's
@@ -162,8 +170,8 @@ def check_oneshot():
             f"wall {seed}: greedy wrote a move its own rollout could not replay: {result.stopped}"
         assert result.proposed == result.examined, "greedy must not write past the top"
         for move in result.moves:
-            # Any two limbs may share a hold; three distinct holds is the whole rule.
-            assert len(set(move.pose.values())) >= 3, f"all four limbs on two holds: {move.pose}"
+            # Any two limbs may share a hold; three distinct holds is the rule, bar the finish.
+            assert _holds_enough(scene, move.pose), f"all four limbs on two holds: {move.pose}"
             targets = move.targets()["targets"]
             assert len(targets) == 4 and sum(t["move"] for t in targets) == 1
         solved += result.reached_top
@@ -194,7 +202,7 @@ def check_steps():
         assert not any(move.fell_back for move in result.moves), "the fallback must not be needed"
         assert result.request_png is None, "the step planner renders per move, not once"
         for move in result.moves:
-            assert len(set(move.pose.values())) >= 3, f"all four limbs on two holds: {move.pose}"
+            assert _holds_enough(scene, move.pose), f"all four limbs on two holds: {move.pose}"
             assert not _crossed(scene, move.pose), f"crossed limbs: {move.pose}"
             targets = move.targets()["targets"]
             assert len(targets) == 4 and sum(t["move"] for t in targets) == 1
@@ -209,6 +217,12 @@ def check_steps():
     # a limb could cross 0.5 m past its partner).
     assert solved >= 15, f"greedy through the loop only solved {solved}/{len(WALLS)}"
     print(f"  greedy through the step-by-step loop reached the top on {solved}/{len(WALLS)} walls")
+
+
+def _holds_enough(scene, pose) -> bool:
+    """Three distinct holds, or the topped-out pose -- both hands on top may leave only two."""
+    return (len(set(pose.values())) >= 3
+            or all(pose[hand] == scene.route.top_hold_id for hand in HANDS))
 
 
 def _crossed(scene, pose) -> list[str]:

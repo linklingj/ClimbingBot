@@ -280,7 +280,7 @@ def validate(move: dict, scene: Scene, pose: Pose, model: ReachModel = ReachMode
         return f"hold {hold_id} is not on the route"
     if pose[limb] == hold_id:
         return f"{limb} already holds {hold_id}"
-    if hold_id in blocked_holds(pose, limb):
+    if hold_id in blocked_holds(pose, limb, scene.route.top_hold_id):
         # Naming the occupant matters: the rule is not one-limb-per-hold, so "already held" alone
         # reads as if it contradicted the prompt's matching rule.
         others = [l for l in LIMBS if l != limb and pose[l] == hold_id]
