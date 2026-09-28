@@ -22,12 +22,10 @@ class ReachModel:
     controller keeps failing moves the generator called reachable, or if it clears moves the
     generator refused. Numbers from a ~1.7 m climber, not measured against the rig yet."""
 
-    hand_step: float = 1.4  # how far a hand may travel in one move
-    foot_step: float = 1.0
-    torso: float = 0.55  # shoulder line above hip line
-    shoulder_half: float = 0.20
-    hip_half: float = 0.12
-    cross_margin: float = 0.25  # how far a limb may reach past its opposite before it is crossed
+    hand_step: float = 1.6  # how far a hand may travel in one move
+    foot_step: float = 1.2
+    min_rise: float = 0.25  # how far the lowest hand must stay above the highest foot
+    cross_margin: float = 0.5  # how far a limb may reach past its opposite before it is crossed
     max_span: float = 2.4  # furthest hand-to-foot distance allowed after the move
 
 
@@ -52,20 +50,19 @@ def blocked_holds(pose: Pose, limb: str) -> set[int]:
     return blocked
 
 
-def anchors(scene: Scene, pose: Pose, model: ReachModel = ReachModel()) -> dict[str, tuple[float, float]]:
-    """Where each limb reaches from: shoulders and hips hung off the centre of the four contacts."""
-    xs, ys = zip(*(scene.position(pose[limb]) for limb in LIMBS))
-    cx, cy = sum(xs) / 4, sum(ys) / 4
-    return {
-        "left_hand": (cx - model.shoulder_half, cy + model.torso / 2),
-        "right_hand": (cx + model.shoulder_half, cy + model.torso / 2),
-        "left_foot": (cx - model.hip_half, cy - model.torso / 2),
-        "right_foot": (cx + model.hip_half, cy - model.torso / 2),
-    }
+def rise(scene: Scene, pose: Pose) -> float:
+    """How far the lowest hand sits above the highest foot. Negative means a foot is above a hand.
+
+    This replaced a shoulder/hip line hung off the centre of the four contacts. That line let a foot
+    sit level with a hand (it was measured against the centroid, not against the hands) while
+    refusing a foot 2 cm over it, which is both halves of the same bug.
+    """
+    return (min(scene.position(pose[hand])[1] for hand in HANDS)
+            - max(scene.position(pose[foot])[1] for foot in FEET))
 
 
 def rejection(scene: Scene, pose: Pose, limb: str, hold_id: int,
-              model: ReachModel = ReachModel(), anchor=None) -> str | None:
+              model: ReachModel = ReachModel()) -> str | None:
     """Why `limb` may not move to `hold_id` from `pose`, in the words of the rule that refused it,
     or None if it may. Occupancy is `blocked_holds`; this is the geometry.
 
@@ -73,19 +70,23 @@ def rejection(scene: Scene, pose: Pose, limb: str, hold_id: int,
     by the filter that actually stopped it. Reporting every refusal as "out of reach" hid a 2 mm
     crossing overshoot on wall 7 behind a distance message, and no amount of `stretch` moved it.
     """
-    anchor = anchor or anchors(scene, pose, model)
     x, y = scene.position(hold_id)
+    here = scene.position(pose[limb])
     hand = limb in HANDS
     step = model.hand_step if hand else model.foot_step
-    distance = math.dist(scene.position(pose[limb]), (x, y))
+    distance = math.dist(here, (x, y))
     if distance > step:
         return (f"out of reach: {distance:.2f} m from hold {pose[limb]}, and a "
                 f"{'hand' if hand else 'foot'} moves at most {step:.2f} m")
-    if hand and y < anchor["left_foot"][1]:
-        return f"below the hip line (y {y:.2f} m, hips {anchor['left_foot'][1]:.2f} m); hands stay above it"
-    if not hand and y > anchor["left_hand"][1] - 0.1:
-        return (f"above the shoulder line (y {y:.2f} m, shoulders {anchor['left_hand'][1]:.2f} m); "
-                f"feet stay below it")
+    if hand and y < here[1] - 1e-9:
+        return f"hands do not climb down: hold {hold_id} is {here[1] - y:.2f} m below hold {pose[limb]}"
+    after = rise(scene, {**pose, limb: hold_id})
+    # A hand above every foot is the open stance. Not an absolute floor: some start poses are already
+    # under it, and refusing every move from there would strand the climber -- so a move that does
+    # not make the rise worse is allowed through.
+    if after < model.min_rise and after < rise(scene, pose):
+        return (f"hands must stay above the feet: after the move the lowest hand is {after:.2f} m "
+                f"above the highest foot, under the {model.min_rise:.2f} m the stance needs")
     opposite_x = scene.position(pose[OPPOSITE[limb]])[0]
     crossed = x > opposite_x + model.cross_margin if limb.startswith("left") \
         else x < opposite_x - model.cross_margin
@@ -106,7 +107,6 @@ def candidates(
 ) -> dict[str, list[int]]:
     """Reachable route holds per limb. A limb with no candidate is left out."""
     route = set(scene.route.hold_ids)
-    anchor = anchors(scene, pose, model)
     top = scene.position(scene.route.top_hold_id)
 
     out: dict[str, list[int]] = {}
@@ -114,7 +114,7 @@ def candidates(
         blocked = blocked_holds(pose, limb)
         found = [hold.id for hold in scene.holds
                  if hold.id in route and hold.id not in blocked
-                 and rejection(scene, pose, limb, hold.id, model, anchor) is None]
+                 and rejection(scene, pose, limb, hold.id, model) is None]
         # ponytail: sorted by progress towards the top so truncation keeps the useful ones. A
         # smarter ranking only matters once the prompt is provably too long.
         found.sort(key=lambda hid: math.dist(scene.position(hid), top))
