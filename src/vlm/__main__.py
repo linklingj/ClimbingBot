@@ -41,6 +41,8 @@ def main() -> int:
                          "posture -- so the whole sequence runs instead of stopping at the first bad "
                          "move. The moves that would have been refused are marked (!). Never when "
                          "measuring.")
+    ap.add_argument("--no-step-png", action="store_true",
+                    help="with --out, write scene.json and plan.json but skip the per-pose PNGs")
     ap.add_argument("--out", type=Path, help="scene.json, plan.json, request.png (--oneshot: the "
                                             "exact image sent to the model) and one PNG per pose: "
                                             "step00.png is the start, stepNN.png the pose after "
@@ -61,6 +63,8 @@ def main() -> int:
     def snapshot(index: int, pose) -> None:
         """One PNG per pose, with the candidate rings for that pose -- which is what shows why the
         next move was or was not available. One-shot: not what the model saw; that is request.png."""
+        if args.no_step_png:
+            return
         (out / f"step{index:02d}.png").write_bytes(render(scene, pose, candidates(scene, pose)))
 
     def on_step(index, move):
