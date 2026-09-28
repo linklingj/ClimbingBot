@@ -1,24 +1,27 @@
 {
   "wall": {"coordinate_system": "wall_local_2d", "width": 4, "height": 6},
   "holds": [
-    {"id": 0, "position": [1.954, 0.146], "color": "white"},
-    {"id": 1, "position": [1.589, 0.48], "color": "white"},
-    {"id": 2, "position": [3.016, 0.5], "color": "white"},
-    {"id": 3, "position": [2.255, 0.8], "color": "white"},
-    {"id": 4, "position": [1.382, 0.975], "color": "white"},
-    {"id": 5, "position": [1.848, 1.3], "color": "green"},
-    {"id": 6, "position": [1.571, 1.667], "color": "white"},
-    {"id": 7, "position": [2.051, 2.164], "color": "white"},
-    {"id": 8, "position": [1.53, 2.196], "color": "white"},
-    {"id": 9, "position": [1.474, 2.63], "color": "white"},
-    {"id": 10, "position": [2.269, 2.795], "color": "white"},
-    {"id": 11, "position": [1.954, 3.235], "color": "white"},
-    {"id": 12, "position": [1.792, 3.847], "color": "white"},
-    {"id": 13, "position": [1.886, 4.494], "color": "white"},
-    {"id": 14, "position": [1.804, 4.96], "color": "white"},
-    {"id": 15, "position": [1.587, 5], "color": "red"}
+    {"id": 0, "position": [1.954, 0.116], "color": "white"},
+    {"id": 1, "position": [1.707, 0.436], "color": "white"},
+    {"id": 2, "position": [2.621, 0.5], "color": "white"},
+    {"id": 3, "position": [2.191, 0.791], "color": "white"},
+    {"id": 4, "position": [1.215, 0.877], "color": "white"},
+    {"id": 5, "position": [2.002, 1.168], "color": "white"},
+    {"id": 6, "position": [1.848, 1.3], "color": "green"},
+    {"id": 7, "position": [2.323, 1.3], "color": "green"},
+    {"id": 8, "position": [1.711, 1.572], "color": "white"},
+    {"id": 9, "position": [2.032, 1.957], "color": "white"},
+    {"id": 10, "position": [1.252, 2.039], "color": "white"},
+    {"id": 11, "position": [1.465, 2.479], "color": "white"},
+    {"id": 12, "position": [2.3, 2.49], "color": "white"},
+    {"id": 13, "position": [1.678, 3.006], "color": "white"},
+    {"id": 14, "position": [2.167, 3.53], "color": "white"},
+    {"id": 15, "position": [1.665, 3.672], "color": "white"},
+    {"id": 16, "position": [2.153, 4.131], "color": "white"},
+    {"id": 17, "position": [2.033, 4.58], "color": "white"},
+    {"id": 18, "position": [1.587, 5], "color": "red"}
   ],
   "routes": [
-    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "start_hold_ids": [5], "top_hold_id": 15}
+    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], "start_hold_ids": [6, 7], "top_hold_id": 18}
   ]
 }

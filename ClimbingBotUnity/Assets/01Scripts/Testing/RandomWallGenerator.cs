@@ -29,6 +29,10 @@ namespace ClimbingBot.Testing
         [Tooltip("Only the height is fixed. The x is read off the spline, so the start hold sits on the route rather than beside it.")]
         public float startHoldY = 1.3f;
 
+        [Range(0f, 1f)]
+        [Tooltip("Chance that the route starts on two holds side by side instead of one. With one, both hands match on it; with two, the climber leaves the ground with a hand on each.")]
+        public float twoStartHoldsChance = 0.5f;
+
         [Tooltip("Only the height is fixed. The x is random, and the spline ends on it.")]
         public float topHoldY = 5.3f;
 
@@ -89,7 +93,7 @@ namespace ClimbingBot.Testing
             var rng = new System.Random(seed);
             var topHold = new Vector2(RandomX(wall, rng), topHoldY);
             var container = BuildSpline(wall, rng, topHold);
-            var startHold = new Vector2(SplineXAtHeight(container, startHoldY), startHoldY);
+            var startHolds = StartHolds(wall, container, rng);
 
             var route = new List<(Vector2 position, HoldRole role)>();
             foreach (var wallPosition in BakeWallPositions(wall, container, seed, 0f))
@@ -98,13 +102,13 @@ namespace ClimbingBot.Testing
                 // it drops on them rather than stacking two holds in one spot. Half the *tightest*
                 // spacing, so this never eats a hold that is legitimately its own.
                 var overlap = minHoldSpacing * 0.5f;
-                if (Vector2.Distance(wallPosition, startHold) < overlap) continue;
+                if (startHolds.Exists(start => Vector2.Distance(wallPosition, start) < overlap)) continue;
                 if (Vector2.Distance(wallPosition, topHold) < overlap) continue;
 
                 route.Add((wallPosition, HoldRole.Normal));
             }
 
-            route.Add((startHold, HoldRole.Start));
+            foreach (var start in startHolds) route.Add((start, HoldRole.Start));
             route.Add((topHold, HoldRole.Top));
             route.Sort((a, b) => a.position.y.CompareTo(b.position.y));
             BridgeGaps(route);
@@ -249,6 +253,27 @@ namespace ClimbingBot.Testing
 
                 i++;
             }
+        }
+
+        /// <summary>
+        /// Where the route starts: one hold on the spline, or -- with twoStartHoldsChance -- a second
+        /// one beside it at the same height, a spacing away. Two holds let the climber leave the
+        /// ground with a hand on each; with one, both hands match on it
+        /// (src/vlm candidates.initial_pose), and on a route that runs straight up that leaves the
+        /// planner's no-crossing rule almost nothing to work with.
+        /// </summary>
+        List<Vector2> StartHolds(ClimbingWall wall, SplineContainer container, System.Random rng)
+        {
+            var first = new Vector2(SplineXAtHeight(container, startHoldY), startHoldY);
+            var holds = new List<Vector2> { first };
+            if (rng.NextDouble() >= twoStartHoldsChance) return holds;
+
+            // A spacing, not a reach: the pair is one gap apart, so BridgeGaps has nothing to add
+            // between them and the hands start a shoulder width apart rather than at full stretch.
+            var gap = (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing));
+            var toTheRight = first.x + gap <= wall.width - sideMargin;
+            holds.Add(new Vector2(toTheRight ? first.x + gap : first.x - gap, startHoldY));
+            return holds;
         }
 
         float RandomX(ClimbingWall wall, System.Random rng)

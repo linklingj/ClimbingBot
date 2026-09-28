@@ -21,7 +21,7 @@ from .providers import GreedyChooser, MoveChooser
 from .render import render
 from .scene import HANDS, LIMBS, Scene
 
-SYSTEM_STEPS = """You are a strong climber (1.7 m) working out the beta for a route, one limb move
+SYSTEM_STEPS = """You are a strong climber (1.6 m) working out the beta for a route, one limb move
 at a time. The holds are given -- you are choosing the move, not searching for a path.
 
 INPUT
@@ -34,21 +34,32 @@ HARD RULES
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
 - Never cross: the left hand stays left of the right hand, the left foot left of the right foot.
 - Finish with BOTH hands on `goal.top_hold_id`; the route is cleared when the second hand matches.
+  The move that ends it outranks everything below: the moment that hold is in `candidates` for the
+  hand not already on it, take it. Do not tidy the feet first.
 
 CHOOSE LIKE A CLIMBER
 - MOVE THE LIMB THAT IS BEHIND. Between the two hands, and between the two feet, the lower one goes
   first: never reach again with the hand that is already the highest, and never lift the higher foot
   while the other is still low. Bring the pair level, then gain height with it.
-- TAKE THE NEAREST CANDIDATE THAT GAINS HEIGHT, not the highest one you can reach. A short move you
-  stay in balance for beats a long stretch -- the higher hold is still there next move.
-- Feet first. If the hand move is long, bring a foot up and take the hold next move.
+- TAKE THE NEAREST CANDIDATE THAT GAINS HEIGHT, not the highest one you can reach -- and compare
+  across all four limbs, not one at a time: the shortest move on the board is usually the right one.
+  A short move you stay in balance for beats a long stretch, and the higher hold is still there next
+  move.
+- STAY LONG, DO NOT FOLD UP. Keep the lowest hand around 1 m above the highest foot. Under 0.5 m you
+  are squatting on the wall: the arms have nothing to pull on and the feet cut loose. When the gap is
+  already short the next move is a HAND going up, never another foot coming up.
+- Feet first -- but only while the body stays long. If the hand move is long, bring a foot up and
+  take the hold next move.
+- MATCH ONLY WHEN YOU MUST. Two limbs on one hold is an escape from a pose with no other move, not
+  tidying-up: if any limb is offered a hold nobody is standing on, take that instead. Matching both
+  feet under matched hands is the folded pose above. The finish is the one exception.
 - Hang from a wide triangle: the three limbs that stay put spread out, not bunched onto neighbouring
   holds and not in a line. Stay open -- arms straight, hips in, weight on the feet.
 - Alternate. From `history`: do not move the same limb twice in a row, and never step back onto the
   hold you just left. Prefer the move that leaves the next one available.
 """
 
-SYSTEM_ONESHOT = """You are a strong climber (1.7 m) working out the beta for a route. The holds are
+SYSTEM_ONESHOT = """You are a strong climber (1.6 m) working out the beta for a route. The holds are
 given. Write the whole sequence of limb moves, in order, from the starting position to the top.
 
 INPUT
@@ -60,8 +71,8 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
 - A limb travels at most `limits.hand_step` (hands) or `limits.foot_step` (feet) metres, measured
   from the hold it is on at THAT point in your own sequence, not from where it started.
 - After every move the lowest hand stays above the highest foot, and no hand is further than
-  `limits.max_span` metres (2.4 m) from any foot. That is separate from the step: a hand can travel
-  1.0 m and still tear the body past 2.4 m because the feet stayed put. Bring a foot up first.
+  `limits.max_span` metres (2.0 m) from any foot. That is separate from the step: a hand can travel
+  1.0 m and still tear the body past 2.0 m because the feet stayed put. Bring a foot up first.
 - Hands never move down to a lower hold, and no limb ever takes a hold below the lowest of the
   four: the body only ever leaves the ground behind.
 - Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
@@ -69,17 +80,26 @@ HARD RULES -- nothing resets between moves, so track all four limbs as you write
   stays left of the right foot. Going up a line of holds that drifts sideways means ordering the
   moves so the trailing limb goes first.
 - Finish with BOTH hands on `goal.top_hold_id`. Plan the last two moves together: feet high enough
-  that the second hand can follow.
+  that the second hand can follow. Once the trailing hand is within `limits.hand_step` of the top,
+  write that move -- do not spend a move tidying the feet first.
 
 CHOOSE LIKE A CLIMBER
 - MOVE THE LIMB THAT IS BEHIND. Between the two hands, and between the two feet, the lower one goes
   first: never reach twice in a row with the hand that is already the highest, and never lift the
   higher foot while the other is still low. Bring the pair level, then gain height with it.
-- TAKE THE NEAREST HOLD THAT GAINS HEIGHT, not the highest one in range. A short move you stay in
-  balance for beats a long stretch -- the higher hold is still there for the next move.
-- Feet first, alternate limbs, and never step back onto the hold you just left.
-- Hang from a wide triangle, never bunched onto neighbouring holds and never lined up. Keep 1 to
-  1.5 m between hands and feet: hips in, weight on the feet.
+- TAKE THE NEAREST HOLD THAT GAINS HEIGHT, not the highest one in range -- and compare all four
+  limbs before picking: the shortest move available is usually the right one. A short move you stay
+  in balance for beats a long stretch, and the higher hold is still there for the next move.
+- STAY LONG, DO NOT FOLD UP. Keep the lowest hand around 1 m above the highest foot. Under 0.5 m you
+  are squatting on the wall: the arms have nothing to pull on and the feet cut loose. When the gap is
+  already short the next move is a HAND going up, never another foot coming up.
+- Feet first, alternate limbs, and never step back onto the hold you just left -- but only bring a
+  foot up while the body stays long.
+- MATCH ONLY WHEN YOU MUST. Two limbs on one hold is an escape from a pose with no other move, not
+  tidying-up: if any limb can reach a hold nobody is standing on, write that instead. Matching both
+  feet under matched hands is the folded pose above. The finish is the one exception.
+- Hang from a wide triangle, never bunched onto neighbouring holds and never lined up: hips in,
+  weight on the feet.
 - Every move gains height or sets up the one that does, and leaves a next move available.
 """
 

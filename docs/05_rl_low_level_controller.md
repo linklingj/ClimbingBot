@@ -171,7 +171,9 @@ target 홀드를 잡는다 --- 홀드 선택은 planner의 일, 이 모듈은 "�
 잡고 있을 때만 허용한다.
 
 **Stage 1은 나머지 세 limb의 branch를 통째로 "no change"로 막는다**
-(`ClimbingAgent.lockSupportLimbs`). 끄면 Stage 2 동작(전부 자유)이 된다.
+(`ClimbingAgent.lockSupportLimbs`). 끄면 전부 자유다 --- 다만 Stage 2에서
+스테이지가 바뀌는 것은 "목표가 이어진다"는 쪽이고 이 잠금은 별개 노브다.
+**Stage 2 첫 런은 켠 채로 간다**("Stage 2 환경" 참고).
 
 ## Grasp 모델
 
@@ -244,7 +246,7 @@ raw force를 걸 뿐이라 `ClimbingAgent`의 joint target과 무관하다.
 | Stage | 목표 | 벽 |
 |---|---|---|
 | 1 --- Single Limb Target | 균형 유지·관절 제어 안정화. 다른 limb 고정, 하나만 랜덤 target으로 | `ScatteredWallGenerator`(루트 없음). 종료는 탑아웃이 아니라 목표 홀드 grasp |
-| 2 --- Random Wall Climbing | pose-to-pose transition 학습, target pose 연속 제공 | `RandomWallGenerator`(spline 루트) |
+| 2 --- Planned Route Climbing | pose-to-pose transition 학습, target pose 연속 제공 | `RandomWallGenerator`로 내보낸 `walls/wall_NNN.json` 20장 + 각 벽의 VLM plan(`out/<run>-seed<N>/`) |
 | 3 --- Planner Integration | VLM이 생성한 target pose 수행 | 실제 CV 출력 |
 
 ## 벽과 홀드
@@ -288,7 +290,7 @@ raw force를 걸 뿐이라 `ClimbingAgent`의 joint target과 무관하다.
 | 생성기 | 벽 모양 | 쓰는 곳 |
 |---|---|---|
 | `ScatteredWallGenerator` | 벽 전체에 홀드가 흩뿌려짐, 루트 없음 | Stage 1 |
-| `RandomWallGenerator` | spline 한 줄기를 따라가는 루트 | Stage 2 |
+| `RandomWallGenerator` | spline 한 줄기를 따라가는 루트 | Stage 2 벽 익스포트(학습 중에는 안 돈다 --- `Stage2Environment`가 내보낸 JSON을 읽는다) |
 
 둘 다 **버릴 코드다** --- 최종 시스템의 홀드는 CV 출력에서 온다.
 `ClimbingWall`의 공개 API만 쓰는 별도 컴포넌트로 뺐다.
@@ -333,7 +335,7 @@ id/role/color를 유지하지도 못해서 위치만 받아 쓰고 버린다.
 
 **간격 보장.** start/top이 지정 높이라 이웃과 멀어질 수 있는 남은
 간격은 중점에 홀드를 끼워 반으로 접는다 --- 이후 모든 연속 간격이
-`maxReach`(1.4 m, ragdoll 팔 스팬 기준) 이하다.
+`maxReach`(1.2 m, ragdoll 팔 스팬 기준) 이하다.
 
 **발 홀드 2차 패스.** 홀드가 한 줄뿐이면 손과 발이 같은 홀드를 두고
 경쟁하고 대개 발이 진다. 그래서 같은 spline을 `footDropY`(1.0 m)만큼
@@ -377,11 +379,23 @@ jitter를 새로 뽑으므로 손 줄의 사다리를 그대로 복사하지 않
 이상 밀면 줄이 루트에서 너무 떨어져 완등이 7/20으로 무너진다. **지금
 수치에서는 바꿀 이유가 없다.**
 
-## Stage 1 환경
+## 환경 --- 스테이지가 에피소드를 정한다
+
+`ClimbEnvironment` (`Assets/01Scripts/Training/ClimbEnvironment.cs`) ---
+에피소드가 어떻게 생겼는지를 정하는 쪽의 추상 클래스다(벽, 시작 자세,
+어느 limb→어느 홀드). **관측·보상·행동은 여기 없다**(그건 `ClimbingAgent`의
+몫). `ClimbingAgent.env`가 이 타입이라 agent는 스테이지를 모른다.
+
+| 멤버 | 하는 일 |
+|---|---|
+| `ResetEpisode(seed)` | 에피소드 하나를 세운다. 실패 시 false --- 호출자가 재시도 |
+| `TargetLimb` / `TargetHold` / `IsTargetReached` | 지금 옮기는 limb, 목표 홀드, 도달 여부 |
+| `AdvanceTarget()` | 목표를 잡은 직후 호출된다. true면 다음 목표를 세웠으니 에피소드 계속, false면 종료. **Stage 1과 Stage 2의 차이는 사실상 이 한 메서드다** |
+| `AssignedHold(limb)` | 이번 move에서 그 limb이 있어야 할 홀드. agent가 관측·grasp에 쓴다. 기본은 "지시받은 limb은 목표, 나머지는 지금 잡고 있는 홀드" |
+| `PoseOn(hips, holds)` | 네 limb을 지정 홀드에 얹고 hips를 지정 위치에 둔다(두 뼈 CCD). 잡기에 실패한 limb이 있으면 false |
 
 `Stage1Environment` (`Assets/01Scripts/Training/Stage1Environment.cs`) ---
-에피소드가 어떻게 생겼는지를 정한다(벽, 시작 자세, 어느 limb→어느
-홀드). **관측·보상·행동은 여기 없다**(그건 `ClimbingAgent`의 몫).
+한 에피소드가 한 move다(`AdvanceTarget`은 항상 false).
 
 디버그 뷰: 목표 홀드는 주황(`targetHoldColor`), 성공 시 벽 slab이 잠깐
 초록(`successFlashColor`, 0.5초). 색은 관측에 안 들어간다.
@@ -418,6 +432,57 @@ limb을 무작위 순서로 훑어 후보가 있는 첫 limb을 쓴다. 후보 �
 
 실측(시드 150개): 도달 가능한 타깃이 없는 에피소드 0건, 네 limb 전부
 grasp 150/150, 타깃 limb 분포가 고르다.
+
+## Stage 2 환경
+
+`Stage2Environment` (`Assets/01Scripts/Training/Stage2Environment.cs`) ---
+**VLM planner가 이미 뽑아 둔 move 시퀀스를 그대로 따라 올라간다.** 에피소드
+하나가 루트 하나고, move를 잡을 때마다 목표가 다음 move로 넘어간다.
+
+-   **벽도 계획도 파일이다.** `out/<run>-seed<N>/scene.json`(=
+    `walls/wall_NNN.json`, 같은 바이트)과 그 옆의 `plan.json`을 읽는다.
+    벽 생성기도 랜덤 시드도 안 쓴다 --- 오프라인에서 평가한 그 루트를 그대로
+    올라가고, **학습 중 모델 API 호출이 없다**. JSON을 정본으로 두는 것은
+    `docs/07`의 규칙이고, 벽을 시드로 다시 생성하지 않는 이유는 홀드 id가
+    plan의 id와 어긋나면 조용히 다른 홀드를 목표로 잡기 때문이다.
+-   에피소드마다 다음 시퀀스로 넘어간다(라운드 로빈). 영역마다
+    `firstSequence`를 다르게 둔다(씬에서 0~15, `episodeSeed`와 같은 이유 ---
+    같으면 16영역이 동시에 같은 벽을 오른다).
+-   못 쓰는 시퀀스는 목록에서 빠진다: 파일이 없거나(planner run이 아직
+    생성 중), `reached_top`이 false거나, plan이 자기 벽에 없는 홀드를
+    가리키거나, 마지막 pose가 양손 top이 아니거나(그러면 완등률이 탑아웃
+    비율이 아니게 된다), 시작 자세가 리치 밖이면 로그를 한 번 남기고 건너뛴다.
+    파싱 결과는 세션 단위로 캐시한다(16영역 × 20시퀀스를 매번 다시 읽지 않게).
+-   **시작 자세는 plan이 정한다.** move 0의 `pose`에서 움직이는 limb만
+    `from_hold_id`로 되돌리면 그게 루트의 첫 자세다. hips는 손 중점과 발
+    중점 사이 `hipsBias`(0.58) 위치에 둔다 --- Stage 1의 실측 자세(손 +0.42,
+    발 −0.58, 1 m 스팬)를 그대로 재현하는 값이고, plan의 스팬은 1 m가
+    아니라서 **캘리브레이션 노브**다. 자세를 못 만들면 `PoseOn`이 false를
+    돌려주고 그 시퀀스는 빠진다.
+-   **`lockSupportLimbs`는 Stage 2 첫 런에서도 켜 둔다.** 지지 limb까지 풀면
+    Stage 1 정책이 곧바로 다 놓고 떨어진다(실측: 36 물리 스텝에 16영역 64 그립 중
+    58개가 풀렸다). 잠근 채로는 같은 정책이 plan의 move를 이어서 잡는다 --- 먼저
+    "이어지는 목표"만 새로 배우게 하고, 지지 limb 해방은 그 다음 런의 노브로 둔다.
+    docs/05가 말하는 Stage 2의 정의는 목표가 연속으로 주어지는 것이고, 이 잠금은
+    거기에 딸린 별개 노브다.
+-   `AssignedHold`는 **plan의 pose**를 쓴다(기본 구현의 "지금 잡고 있는 홀드"가
+    아니라). 지지 limb이 한 번 미끄러지면 잡을 홀드가 없어져 남은 루트 전체를
+    한 팔로 오르게 되기 때문이다.
+
+지표(`StatsRecorder`, `summary_freq` 구간 평균):
+
+| 지표 | 뜻 |
+|---|---|
+| `Route/Completed` | **완등률** --- plan의 move를 전부 수행한 비율. 끝 pose가 양손 top이므로 `IsToppedOut`과 같다 |
+| `Route/Progress` | 수행한 move 수 / plan의 move 수. 완등률이 아직 0에 가까울 때 먼저 움직이는 값 |
+| `Route/Moves` | 수행한 move 수(절대값) |
+| `Success/<limb>`, `ClearTime/<limb>` | Stage 1과 같은 move 단위 지표. Stage 2에서는 에피소드당 여러 번 기록된다 |
+
+**추락 판정이 루트 밑에서는 잘 안 걸린다(실측).** `maxDrop`은 move 시작
+hips 높이 기준인데 루트 첫 자세의 hips는 1 m 안쪽이라, 손을 놓친 클라이머가
+1 m를 떨어지기 전에 바닥에 닿는다. 그래서 실패는 대개 **시간 초과**로
+기록된다(에피소드는 어차피 끝나므로 학습은 돌아간다). 초기 지표는
+`Route/Progress`와 에피소드 길이를 같이 봐야 한다.
 
 ## Reward 설계
 
@@ -462,7 +527,16 @@ capacity를 넘었다 --- grasp 조인트가 힘 제한 없는 위치 고정이�
 ``` bash
 mlagents-learn config/climber.yaml --run-id=stage1-05
 # 콘솔에 "Start training by pressing the Play button" 가 뜨면 에디터에서 Play
+
+# Stage 2 --- Train2.unity를 열고 Play. behavior 이름이 같으므로 config도 같다.
+mlagents-learn config/climber.yaml --run-id=stage2-01 --initialize-from=stage1-05-5M
 ```
+
+씬은 두 개다: `Train.unity`가 Stage 1(`Stage1Environment`), `Train2.unity`가
+Stage 2(`Stage2Environment`, `MaxStep` 0, `moveMaxSteps` 300,
+`lockSupportLimbs` 켬). Train2는 Train의 복사본이라 16각형 링과 풀 설정을 그대로
+쓴다 --- 영역마다 `Stage2Environment`를 붙이고 `Stage1Environment`를 끈
+프리팹 오버라이드다(프리팹 자체는 Stage 1 그대로).
 
 `config/climber.yaml`은 ml-agents의 `ppo/Walker.yaml`에서 출발했다.
 `gamma` 0.995 → 0.99가 가장 근본적인 차이 --- 한 번의 limb 이동은 1~2초라
@@ -504,7 +578,9 @@ apothem `10.0547 m`으로 영역 *i*를 Y축 `i × 22.5°` 돌려 바깥으로 �
 | Continuous actions | 43 |
 | Discrete branches | 3, 3, 3, 3 |
 | `DecisionRequester` | period 5 (0.1 s마다 결정) |
-| `Agent.MaxStep` | 300 (물리 스텝, = 60결정 = 6 s) |
+| `Agent.MaxStep` | Stage 1은 300 (물리 스텝, = 60결정 = 6 s), Stage 2는 0 |
+| `ClimbingAgent.moveMaxSteps` | Stage 1은 0(`MaxStep`에 맡김), Stage 2는 300 --- move 하나의 물리 스텝 예산 |
+| `ClimbingAgent.lockSupportLimbs` | Stage 1 켬, Stage 2 첫 런도 켬(지지 limb 해방은 다음 런) |
 
 `Heuristic()`은 **무동작**이다(모든 관절 가동범위 중앙, grasp 불변) ---
 학습기/모델 없이 씬을 돌릴 때 placeholder action에 안 끌려다니게 하기
@@ -518,9 +594,18 @@ apothem `10.0547 m`으로 영역 *i*를 Y축 `i × 22.5°` 돌려 바깥으로 �
     번도 발화하지 않는다**(지지 limb 셋이 월드에 고정돼 hips가 1 m를
     못 떨어짐 --- 실패는 전부 시간 초과). 이 여유가 낙차 패널티를
     필요하게 만들었다(문턱이 안 걸릴 만큼 넓어 평균 0.51 m 처짐이 공짜였음).
--   **시간 초과** --- `Agent.MaxStep` 300 물리 스텝, 보너스/패널티 없음.
-    단위는 결정이 아니라 물리 스텝(`StepCount`가 academy 스텝마다 오름,
-    TensorBoard의 `Environment/Episode Length`는 결정 단위라 5를 곱해야 맞음).
+-   **시간 초과** --- 보너스/패널티 없음. Stage 1은 `Agent.MaxStep` 300 물리
+    스텝, Stage 2는 `moveMaxSteps` 300 물리 스텝을 **move마다** 준다(`MaxStep`은
+    0으로 둔다 --- 안 그러면 루트 중간에서 에피소드가 끊긴다). 단위는 결정이
+    아니라 물리 스텝(`StepCount`가 academy 스텝마다 오름, TensorBoard의
+    `Environment/Episode Length`는 결정 단위라 5를 곱해야 맞음). 끊을 때는
+    `EndEpisode`가 아니라 `EpisodeInterrupted` --- 시간 초과는 terminal state가
+    아니므로 value가 0으로 학습되면 안 된다(`MaxStep`이 하는 것과 같다).
+-   **다음 move** --- 목표를 잡으면 `+1.0`을 주고 `AdvanceTarget()`에게
+    묻는다. Stage 1은 여기서 끝이고, Stage 2는 다음 move로 이어간다. 이때
+    `ClimbingAgent`의 per-move 상태(래칫, 놓기 보상, 낙차 기준 hips 높이,
+    move 스텝 예산)를 전부 다시 잡는다 --- 루트 밑바닥을 기준으로 잰 낙차는
+    위쪽에서 아무 의미가 없다.
 
 두 TensorBoard 지표(`Success/<limb>`, `ClearTime/<limb>`)는
 `StatsRecorder`가 `summary_freq` 구간 평균을 내므로 그래프가 곧
@@ -536,7 +621,8 @@ Stage 2 이후로 미룬 것: 일정 시간 pose 유지 요구, 비정상 자세
 -   평균 pose completion time --- TensorBoard `ClearTime/<limb>`(성공한
     에피소드만 --- 반드시 `Success/<limb>`와 같이 읽는다)
 -   Fall rate / Grasp success rate
--   연속 N-pose 수행 성공률
+-   연속 N-pose 수행 성공률 --- TensorBoard `Route/Completed`(완등률),
+    `Route/Progress`
 -   unseen random wall generalization
 -   그립 하중 / `StabilityScore` --- 자세가 사람 손 힘 안에 드는지
 
