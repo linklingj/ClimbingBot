@@ -261,3 +261,45 @@ span을 프롬프트에 숫자로 넣었다.
   같은지는 selftest가 본다 --- 숫자를 프롬프트에 적는 값은 이 assert 하나다.
 - 재는 방식은 `_span()` 그대로다(손×발 4쌍의 최대). 손-손이나 발-발 거리는 심판이 안 보고,
   프롬프트에도 안 쓴다 --- 심판이 안 보는 규칙을 모델에게 말하면 그게 더 나쁘다.
+
+## step-by-step 루프를 기본으로 되살리고 one-shot을 `--oneshot`으로 (2026-09-28)
+
+`feature/vlm-oneshot-planner`를 develop에 머지하면서 **두 전략을 다 남겼다.** 기본은
+move마다 재계획하는 루프(`plan_steps`)이고, `--oneshot`이 요청 한 번에 전체 시퀀스를
+받아 재생하는 쪽(`plan_oneshot`)이다.
+
+**왜.** one-shot으로 갈아탄 근거가 없었다. docs/04에 적힌 유일한 비교가 gpt-6-sol
+0/5 대 greedy 20/20인데, greedy는 매 move 후보를 다시 계산하는 쪽이라 애초에 같은
+조건이 아니다. 같은 모델로 루프를 돌린 수치는 이 저장소에 없다. 지울 이유가 없으면
+남긴다.
+
+무엇을 어떻게 나눴나.
+
+- **planner.py 하나에 둘 다 있다.** `SYSTEM_STEPS` / `SYSTEM_ONESHOT`,
+  `move_schema` / `plan_schema`, `step_payload` / `build_payload`, `plan_steps` /
+  `plan_oneshot`. 공유하는 것은 `validate()`, `Move`, `Plan`, target pose 직렬화,
+  `_topped_out`. 모듈을 쪼개면 `Move`/`Plan`을 두 번 쓰게 돼서 한 파일로 뒀다.
+- **`Plan.mode`** 가 `"steps"` / `"oneshot"`을 들고 있고 `plan.json`에도 들어간다.
+  `valid_move_rate`의 의미가 모드마다 다르기 때문에 --- one-shot은 재생한 move 중
+  실행된 비율, 루프는 요청 중 유효한 답이 온 비율이다. 섞어 비교하면 안 되는 숫자라
+  모드를 같이 적게 했다. 카운터는 union으로 뒀다(`requests`/`invalid` 대
+  `proposed`/`examined`), 안 쓰는 쪽은 0이다.
+- **`GreedyChooser`가 두 스키마를 다 답한다.** `schema`에 `moves` 배열이 있으면
+  자기 rollout으로 시퀀스를, 없으면 move 하나를 돌려준다. 점수 계산(`_best`)은 한
+  군데다. 루프의 fallback도 이 클래스 그대로다.
+- 루프 쪽 규칙은 **머지된 새 규칙을 따른다** --- 매칭 허용, 양손 완등, `rejection()`
+  기반 사유. 옛 루프의 "홀드 하나에 limb 하나" / "한 손이 top이면 완등"으로 되돌리지
+  않았다. 그 규칙으로는 greedy가 0/20이고(docs/04 표), Unity의 `IsToppedOut`과도
+  어긋난다. 루프가 다시 필요한 것은 **요청 방식**이고 규칙이 아니다.
+- `--skip-filters`는 one-shot 전용이다. 루프에서는 후보 목록이 곧 모델의 선택지라
+  심판을 끄면 고를 것이 없다. CLI가 조합을 거부한다.
+- `validate()`에 "후보 목록에 있는지"를 다시 넣지 않았다. 목록은 `max_per_limb`로
+  잘려 있어서 그걸로 검사하면 닿는 홀드를 거절한다 --- 루프에서도 심판은 기하학이다.
+
+검증(오프라인, 모델 호출 없음): `selftest`에 `check_steps`(루프를 greedy로 20벽)와
+`check_step_prompt`(payload/schema/프롬프트)를 추가했다. **두 모드 모두 20/20 완등**,
+루프는 요청 16~18회에 invalid 0, fallback 0회.
+
+다음: 같은 벽 다섯 개를 `--oneshot` 유/무로 한 번씩 돌려 `valid_move_rate`와 완등률을
+나란히 적는다. 그게 있어야 기본값을 정한 근거가 생긴다. 호출 수는 CLAUDE.md의 API
+호출 주의를 따른다(벽 하나 먼저, 그 다음 승인).

@@ -115,11 +115,16 @@ def strict_schema(schema: dict) -> dict:
 
 
 class GreedyChooser:
-    """No model: rolls the whole sequence out itself, taking the candidate that gains most towards
-    the top hold at each step. The offline baseline the VLM is measured against.
+    """No model: takes the candidate that gains most towards the top hold, by the same reach rules
+    the planner referees with. The offline baseline the VLM is measured against.
 
-    It re-derives candidates from the pose at every step, which the VLM does not get to do -- so this
-    is a ceiling on what the reach model allows, not a like-for-like opponent.
+    It answers whichever schema it is handed: the whole sequence for `plan_oneshot`, which it rolls
+    out itself, or a single move for `plan_steps`, where it is also the fallback once the model has
+    used up its retries (docs/07, "VLM invalid output").
+
+    Rolling out its own sequence means re-deriving candidates at every step, which the one-shot VLM
+    does not get to do -- so that sequence is a ceiling on what the reach model allows, not a
+    like-for-like opponent.
     """
 
     name = "greedy"
@@ -129,38 +134,54 @@ class GreedyChooser:
 
         self.scene = scene
         self.model = model or ReachModel()
+        self._seen: set[tuple] = set()
 
     def choose(self, system: str, payload: dict, schema: dict, image_png: bytes | None) -> dict:
-        from .candidates import candidates
         from .scene import HANDS
 
-        top = self.scene.position(payload["goal"]["top_hold_id"])
+        top_hold_id = payload["goal"]["top_hold_id"]
         pose = dict(payload["body"])
+        if "moves" not in schema["properties"]:  # one move, from this pose
+            move = self._best(pose, top_hold_id)
+            if move is None:  # the planner only asks when something is reachable
+                raise RuntimeError(f"greedy has no move from {pose}")
+            return move
+
         limit = schema["properties"]["moves"]["maxItems"]
         moves: list[dict] = []
-        seen: set[tuple] = {tuple(sorted(pose.items()))}
-
-        while len(moves) < limit:
-            if all(pose[hand] == payload["goal"]["top_hold_id"] for hand in HANDS):
+        self._seen.add(_key(pose))
+        while len(moves) < limit and not all(pose[hand] == top_hold_id for hand in HANDS):
+            move = self._best(pose, top_hold_id)
+            if move is None:  # nothing reachable for any limb
                 break
-            best = None
-            for limb, ids in candidates(self.scene, pose, self.model).items():
-                here = self.scene.position(pose[limb])
-                for hold_id in ids:
-                    gain = math.dist(here, top) - math.dist(self.scene.position(hold_id), top)
-                    # Unseen poses first: without this it undoes its own move forever whenever every
-                    # option loses ground.
-                    fresh = tuple(sorted({**pose, limb: hold_id}.items())) not in seen
-                    if best is None or (fresh, gain) > best[0]:
-                        best = ((fresh, gain), limb, hold_id)
-            if best is None:  # nothing reachable for any limb
-                break
-            _, limb, hold_id = best
-            pose[limb] = hold_id
-            seen.add(tuple(sorted(pose.items())))
-            moves.append({"reason": "greedy: largest gain towards the top hold",
-                          "moving_limb": limb, "target_hold_id": str(hold_id)})
+            pose[move["moving_limb"]] = int(move["target_hold_id"])
+            moves.append(move)
         return {"moves": moves}
+
+    def _best(self, pose: dict, top_hold_id: int) -> dict | None:
+        from .candidates import candidates
+
+        top = self.scene.position(top_hold_id)
+        best = None
+        for limb, ids in candidates(self.scene, pose, self.model).items():
+            here = self.scene.position(pose[limb])
+            for hold_id in ids:
+                gain = math.dist(here, top) - math.dist(self.scene.position(hold_id), top)
+                # Unseen poses first: without this it undoes its own move forever whenever every
+                # option loses ground.
+                fresh = _key({**pose, limb: hold_id}) not in self._seen
+                if best is None or (fresh, gain) > best[0]:
+                    best = ((fresh, gain), limb, hold_id)
+        if best is None:
+            return None
+        _, limb, hold_id = best
+        self._seen.add(_key({**pose, limb: hold_id}))
+        return {"reason": "greedy: largest gain towards the top hold",
+                "moving_limb": limb, "target_hold_id": str(hold_id)}
+
+
+def _key(pose: dict) -> tuple:
+    return tuple(sorted(pose.items()))
 
 
 def chooser_for(model: str, scene=None) -> MoveChooser:

@@ -123,11 +123,15 @@ Phase 1은 벽 하나에 루트가 하나뿐이라 route 객체가 없기 때문
 
 ### VLM invalid output
 
-schema validator가 시퀀스를 재생하며 move마다 검사하고, **처음 막히는
-move에서 계획을 끊는다.** 재요청도 fallback도 없다 --- 요청이 한 번이라
-재요청할 상대가 없고, 그 뒤 move들은 일어나지 않은 pose를 전제로 한다.
-실행 가능한 prefix까지가 결과물이고, 나머지는 아래 "RL pose 실패"와 같은
-경로로 다시 계획한다.
+schema validator가 move마다 그 시점 pose를 기준으로 검사한다. 그 뒤가
+planner 모드에 따라 갈린다 (docs/04).
+
+-   **step-by-step (기본)** --- 거절 사유를 붙여 **재요청**하고, 두 번
+    실패하면 greedy fallback이 마지막으로 고른다. 계획이 끊기지 않는다.
+-   **one-shot (`--oneshot`)** --- **처음 막히는 move에서 계획을 끊는다.**
+    재요청할 상대가 없고(요청이 한 번이다) 그 뒤 move들은 일어나지 않은
+    pose를 전제로 한다. 실행 가능한 prefix까지가 결과물이고, 나머지는
+    아래 "RL pose 실패"와 같은 경로로 다시 계획한다.
 
 ### RL pose 실패
 
