@@ -316,8 +316,8 @@ def check_replay():
     route = list(scene.route.hold_ids)
     greedy = plan_oneshot(scene, GreedyChooser(scene), with_image=False)
     assert greedy.reached_top
-    canned = [{"reason": m.reason, "moving_limb": m.moving_limb,
-               "target_hold_id": str(m.target_hold_id)} for m in greedy.moves]
+    canned = [{"moving_limb": m.moving_limb, "target_hold_id": str(m.target_hold_id)}
+              for m in greedy.moves]
 
     chooser = _Canned(canned, route)
     result = plan_oneshot(scene, chooser, with_image=False)
@@ -327,7 +327,7 @@ def check_replay():
 
     # Out of reach: nothing retries and nothing falls back -- the plan stops, keeping the prefix.
     far = max(scene.holds, key=lambda h: math.dist(scene.position(route[0]), h.position))
-    bad = canned[:2] + [{"reason": "", "moving_limb": "left_hand", "target_hold_id": str(far.id)}]
+    bad = canned[:2] + [{"moving_limb": "left_hand", "target_hold_id": str(far.id)}]
     result = plan_oneshot(scene, _Canned(bad, route), with_image=False)
     assert not result.reached_top and len(result.moves) == 2 and result.examined == 3
     assert result.valid_move_rate == 2 / 3
@@ -361,9 +361,9 @@ def check_skip_filters():
     assert loose.forced, "the moves the rules would have refused must say so"
     # The flags are honest: replaying what it executed with the referee back on stops where the
     # strict run stopped.
-    again = plan_oneshot(scene, _Canned([{"reason": "", "moving_limb": m.moving_limb,
-                                  "target_hold_id": str(m.target_hold_id)} for m in loose.moves],
-                                route), with_image=False)
+    again = plan_oneshot(scene, _Canned([{"moving_limb": m.moving_limb,
+                                          "target_hold_id": str(m.target_hold_id)}
+                                         for m in loose.moves], route), with_image=False)
     assert len(again.moves) == len(strict.moves)
     print(f"  filters on executed {len(strict.moves)}, off executed {len(loose.moves)} "
           f"({loose.forced} of them forced)")

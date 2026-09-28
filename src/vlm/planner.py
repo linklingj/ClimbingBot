@@ -46,8 +46,7 @@ CHOOSE LIKE A CLIMBER
   holds and not in a line. Stay open -- arms straight, hips in, weight on the feet.
 - Alternate. From `history`: do not move the same limb twice in a row, and never step back onto the
   hold you just left. Prefer the move that leaves the next one available.
-
-`reason`: one short sentence, written before you commit, naming what makes the move stable."""
+"""
 
 SYSTEM_ONESHOT = """You are a strong climber (1.7 m) working out the beta for a route. The holds are
 given. Write the whole sequence of limb moves, in order, from the starting position to the top.
@@ -81,8 +80,7 @@ CHOOSE LIKE A CLIMBER
 - Hang from a wide triangle, never bunched onto neighbouring holds and never lined up. Keep 1 to
   1.5 m between hands and feet: hips in, weight on the feet.
 - Every move gains height or sets up the one that does, and leaves a next move available.
-
-`reason`: one short sentence, written before you commit, naming what makes the move stable."""
+"""
 
 
 
@@ -91,7 +89,6 @@ class Move:
     moving_limb: str
     target_hold_id: int
     from_hold_id: int = -1
-    reason: str = ""
     pose: Pose = field(default_factory=dict)  # pose after the move
     retries: int = 0  # step-by-step: model answers rejected before this one landed
     fell_back: bool = False  # step-by-step: the greedy fallback chose it, not the model
@@ -170,7 +167,7 @@ class Plan:
             "backtracks": self.backtracks,
             "moves": [
                 {"moving_limb": m.moving_limb, "from_hold_id": m.from_hold_id,
-                 "target_hold_id": m.target_hold_id, "reason": m.reason, "retries": m.retries,
+                 "target_hold_id": m.target_hold_id, "retries": m.retries,
                  "fell_back": m.fell_back, "forced": m.forced, "pose": m.pose, **m.targets()}
                 for m in self.moves
             ],
@@ -185,12 +182,11 @@ def move_schema(cands: dict[str, list[int]]) -> dict:
     return {
         "type": "object",
         "properties": {
-            "reason": {"type": "string"},
             "moving_limb": {"type": "string", "enum": sorted(cands)},
             "target_hold_id": {"type": "string", "enum": [str(i) for i in ids]},
         },
-        "required": ["reason", "moving_limb", "target_hold_id"],
-        "propertyOrdering": ["reason", "moving_limb", "target_hold_id"],
+        "required": ["moving_limb", "target_hold_id"],
+        "propertyOrdering": ["moving_limb", "target_hold_id"],
     }
 
 
@@ -198,19 +194,16 @@ def plan_schema(scene: Scene, max_moves: int) -> dict:
     """The whole route as a list of moves. Hold ids are strings because the JSON-schema subset Gemini
     accepts only enumerates strings, and the enum is every hold on the route -- there is no candidate
     list to narrow it to, so validate() is the only thing checking limb and hold against each other.
-
-    `reason` comes first so the model writes a sentence before committing to each move.
     """
     move = {
         "type": "object",
         "properties": {
-            "reason": {"type": "string"},
             "moving_limb": {"type": "string", "enum": sorted(LIMBS)},
             "target_hold_id": {"type": "string",
                                "enum": [str(i) for i in sorted(scene.route.hold_ids)]},
         },
-        "required": ["reason", "moving_limb", "target_hold_id"],
-        "propertyOrdering": ["reason", "moving_limb", "target_hold_id"],
+        "required": ["moving_limb", "target_hold_id"],
+        "propertyOrdering": ["moving_limb", "target_hold_id"],
     }
     return {
         "type": "object",
@@ -381,8 +374,7 @@ def plan_steps(
         limb = chosen["moving_limb"]
         came_from = pose[limb]
         pose[limb] = int(chosen["target_hold_id"])
-        move = Move(limb, pose[limb], came_from, chosen.get("reason", ""), dict(pose),
-                    retries=retries, fell_back=fell_back)
+        move = Move(limb, pose[limb], came_from, dict(pose), retries=retries, fell_back=fell_back)
         result.moves.append(move)
         if on_step:
             on_step(len(result.moves), move)
@@ -435,7 +427,7 @@ def plan_oneshot(
         limb = step["moving_limb"]
         came_from = pose[limb]
         pose[limb] = int(step["target_hold_id"])
-        move = Move(limb, pose[limb], came_from, step.get("reason", ""), dict(pose), forced=forced)
+        move = Move(limb, pose[limb], came_from, dict(pose), forced=forced)
         result.moves.append(move)
         if on_step:
             on_step(index, move)

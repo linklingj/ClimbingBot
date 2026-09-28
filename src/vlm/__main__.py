@@ -66,7 +66,7 @@ def main() -> int:
     def on_step(index, move):
         flag = "!" if move.forced else "*" if move.fell_back else " "
         print(f"  {index:2d}. {move.moving_limb:11s} {move.from_hold_id:3d} -> "
-              f"{move.target_hold_id:3d} {flag} {move.reason}")
+              f"{move.target_hold_id:3d} {flag}")
         if out:
             snapshot(index, move.pose)
 

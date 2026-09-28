@@ -176,8 +176,7 @@ class GreedyChooser:
             return None
         _, limb, hold_id = best
         self._seen.add(_key({**pose, limb: hold_id}))
-        return {"reason": "greedy: largest gain towards the top hold",
-                "moving_limb": limb, "target_hold_id": str(hold_id)}
+        return {"moving_limb": limb, "target_hold_id": str(hold_id)}
 
 
 def _key(pose: dict) -> tuple:
