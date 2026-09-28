@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import math
 
-from .candidates import (LIMBS, ReachModel, anchors, blocked_holds, candidates,
-                         initial_pose, rejection)
+from .candidates import (LIMBS, ReachModel, blocked_holds, candidates, initial_pose,
+                        rejection, rise)
 from .planner import (SYSTEM_ONESHOT, SYSTEM_STEPS, build_payload, move_schema,
                       plan_oneshot, plan_schema, plan_steps, step_payload, validate)
 from .providers import ALIASES, GEMINI, GPT, GreedyChooser, chooser_for, strict_schema
@@ -62,7 +62,6 @@ def check_candidates():
         cands = candidates(scene, pose, model)
         assert cands, f"wall {seed}: nothing reachable from the initial pose"
         with_feet += any(limb in cands for limb in FEET)
-        anchor = anchors(scene, pose, model)
         for limb, ids in cands.items():
             assert ids and len(set(ids)) == len(ids)
             for hold_id in ids:
@@ -73,7 +72,11 @@ def check_candidates():
                 step = model.hand_step if limb in HANDS else model.foot_step
                 assert math.dist(scene.position(pose[limb]), scene.position(hold_id)) <= step + 1e-9
                 y = scene.position(hold_id)[1]
-                assert y >= anchor["left_foot"][1] if limb in HANDS else y <= anchor["left_hand"][1]
+                if limb in HANDS:  # hands never take a lower hold than the one they are on
+                    assert y >= scene.position(pose[limb])[1] - 1e-9
+                # The stance: a hand above every foot, unless the pose was already under it.
+                after = rise(scene, {**pose, limb: hold_id})
+                assert after >= model.min_rise or after >= rise(scene, pose)
 
     # 20/20 since the feet can match; it was 6/20 when a foot could not take the other foot's hold,
     # which is what the footDropY second pass was working around (docs/05 has why it is partial).
@@ -119,7 +122,7 @@ def check_validator():
     assert "out of reach" in rejection(scene, pose, limb, far.id)
     reasons = {rejection(scene, pose, l, h.id).split(":")[0].split(" (")[0]
                for l in LIMBS for h in scene.holds if rejection(scene, pose, l, h.id)}
-    assert {"out of reach", "below the hip line", "above the shoulder line"} <= reasons, reasons
+    assert {"out of reach", "hands must stay above the feet"} <= reasons, reasons
 
     schema = plan_schema(scene, 12)
     move = schema["properties"]["moves"]["items"]

@@ -21,94 +21,54 @@ from .providers import GreedyChooser, MoveChooser
 from .render import render
 from .scene import HANDS, LIMBS, Scene
 
-SYSTEM_STEPS = """You are an experienced climber working out the beta for a route, one limb move at
-a time. You are not searching for a path -- the holds are given. You are choosing the move a strong
-climber would actually make. The climber is 1.7 m tall.
+SYSTEM_STEPS = """You are a strong climber (1.7 m) working out the beta for a route, one limb move
+at a time. The holds are given -- you are choosing the move, not searching for a path.
 
 INPUT
-An image of the wall: hold ids labelled, your four limbs ringed in blue and joined by blue lines,
-the holds you can reach right now ringed in yellow. The same state as JSON, plus `history`, your
-own last few moves.
+The wall as an image (hold ids labelled, your four limbs ringed in blue, the holds you can reach
+right now ringed in yellow) and the same state as JSON, with `candidates` per limb and your own last
+few moves in `history`.
 
-RULES (hard)
-- Move exactly one limb. The other three stay where they are.
-- Only a hold listed in `candidates` for that limb. Nothing else exists for you -- anything out of
-  reach, below the hips, or that would tear the body apart is already gone from that list.
-- TWO LIMBS MAY OCCUPY THE SAME HOLD, if they are the same kind: both hands on one hold, both feet
-  on one hold. Hand/foot matching is not allowed, and `candidates` will not offer it.
-- Finish with BOTH hands on `goal.top_hold_id`. The route is cleared only once the second hand
-  matches on it, so as the top comes into reach, bring the feet up high enough that the second hand
-  can follow.
+HARD RULES
+- Move exactly one limb, to a hold listed in `candidates` for that limb. Nothing else exists.
+- Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
+- Finish with BOTH hands on `goal.top_hold_id`; the route is cleared when the second hand matches.
 
-HOW A CLIMBER CHOOSES (in this order)
-
-1. Keep a triangle. The three limbs that stay put are your support. They are stable when they
-   spread into a wide triangle -- two feet apart with a hand above, or two hands apart with a foot
-   below -- and unstable when they line up or bunch into one spot. Before you commit, picture the
-   triangle you are hanging from.
-
-2. Do not ball up. Four limbs crowded onto neighbouring holds folds the body, pushes the hips off
-   the wall and swings your weight backwards off the holds. Stay open: hands roughly a torso above
-   the feet, arms straight, hips in close, weight on the feet.
-
-3. Feet first, and alternate.
-   Read `history`: do not move the same limb twice in a row, and never put a limb back on the hold
-   it just came off
-
-4. Reach from a stance, not from a stretch. A move made with the hips low and the arms locked out
-   long is a move you cannot control. If the reach is far, bring a foot up first.
-
-5. Think one move ahead. Prefer the move that leaves the next one available; a hold that strands
-   you with nothing in reach is worse than a smaller gain.
+CHOOSE LIKE A CLIMBER
+- Hang from a wide triangle. The three limbs that stay put should spread out, not bunch onto
+  neighbouring holds and not line up. Picture that triangle before you commit.
+- Stay open: hands above the feet, arms straight, hips in, weight on the feet.
+- Feet first. If the hand move is long, bring a foot up and take the hold next move.
+- Alternate. From `history`: do not move the same limb twice in a row, and never step back onto the
+  hold you just left.
+- Gain height, or set up the move that does. Prefer the move that leaves something in reach.
 
 `reason`: one short sentence, written before you commit, naming what makes the move stable."""
 
-SYSTEM_ONESHOT = """You are an experienced climber working out the beta for a route. You are not
-searching for a path -- the holds are given. Write out the whole sequence of limb moves, in order,
-that a strong climber would actually make, from the starting body position to the top.
-Moves should be possible for 1.7 m tall climber.
+SYSTEM_ONESHOT = """You are a strong climber (1.7 m) working out the beta for a route. The holds are
+given. Write the whole sequence of limb moves, in order, from the starting position to the top.
 
 INPUT
-An image of the wall: hold ids labelled, your four limbs at the start ringed in blue and joined by
-blue lines. The same state as JSON: every hold on the route, the body's starting position, and
-`limits`: how far one limb may travel in a single move, and how far the body may spread.
+The wall as an image (hold ids labelled, your four limbs at the start ringed in blue) and the same
+state as JSON: every hold on the route, where the body starts, and `limits`.
 
-RULES (hard)
-- One move = exactly one limb to exactly one hold. The other three stay where they are.
-- Only holds listed in `holds`. Nothing else exists for you.
-- A limb may travel at most `limits.hand_step` (hands) or `limits.foot_step` (feet) metres from the
-  hold it is on at that point in YOUR OWN sequence. Nothing resets between moves, so track where all
-  four limbs are as you go -- a move is measured from where that limb actually is by then, not from
-  where it started.
-- THE BODY ONLY STRETCHES SO FAR. After every move, measure each hand against each foot: the
-  furthest of those four distances is how far the body is spread, and it may not exceed
-  `limits.max_span` metres -- 2.4 m, a 1.7 m climber at full stretch. This is a separate limit from
-  the step above: a hand can move 1.0 m and still tear the body past 2.4 m because the feet stayed
-  where they were. If a hold is too far from your feet, bring a foot up first and take it after.
-- TWO LIMBS MAY OCCUPY THE SAME HOLD. This is matching: both hands on one
-  hold, both feet on one hold. However, foot/hand matching is not allowed.
-- Finish with BOTH hands on `goal.top_hold_id`. The route is cleared only once the second hand
-  matches on it, so plan the last two moves together: bring the feet up high enough that the second
-  hand can follow.
+HARD RULES -- nothing resets between moves, so track all four limbs as you write.
+- One move = one limb to one hold listed in `holds`. The other three stay put.
+- A limb travels at most `limits.hand_step` (hands) or `limits.foot_step` (feet) metres, measured
+  from the hold it is on at THAT point in your own sequence, not from where it started.
+- After every move the lowest hand stays above the highest foot, and no hand is further than
+  `limits.max_span` metres (2.4 m) from any foot. That is separate from the step: a hand can travel
+  1.0 m and still tear the body past 2.4 m because the feet stayed put. Bring a foot up first.
+- Hands never move down to a lower hold.
+- Two limbs may share a hold only if they are the same kind: hand+hand, or foot+foot.
+- Finish with BOTH hands on `goal.top_hold_id`. Plan the last two moves together: feet high enough
+  that the second hand can follow.
 
-HOW A CLIMBER CHOOSES
-
-1. Keep a triangle. Limbs are stable when they spread into a wide triangle --
-   two feet apart with a hand above, or two hands apart with a foot
-   below -- and unstable when they line up or bunch into one spot.
-
-2. Do not ball up. Four limbs crowded onto neighbouring holds folds the body, pull your weight backwards off the holds.
-   Keep distance between hand and feet: at least 1 metre, ideally 1.5 metres.
-
-3. Move up or sideways. Every move should gain height or set up the next one.
-
-4. Do not move the same limb twice in a row, and never put a limb back on the hold it just came off
-
-5. Reach from a stance, not from a stretch. A move made with the hips low and the arms locked out
-   long is a move you cannot control.
-
-6. Think one move ahead. Prefer the move that leaves the next one available; a hold that strands
-   you with nothing in reach is worse than a smaller gain.
+CHOOSE LIKE A CLIMBER
+- Hang from a wide triangle, never bunched onto neighbouring holds and never lined up.
+- Keep 1 to 1.5 m between hands and feet: open body, hips in, weight on the feet.
+- Feet first, alternate limbs, and never step back onto the hold you just left.
+- Every move gains height or sets up the one that does.
 
 `reason`: one short sentence, written before you commit, naming what makes the move stable."""
 
@@ -368,6 +328,19 @@ def plan_steps(
             return result
 
         cands = candidates(scene, pose, model)
+        # Never offer the undo of the last move. The rules are stateless -- they only ever see one
+        # pose -- so this is the only place that knows the hold a limb just left, and stepping
+        # straight back onto it is the plan going in circles, not a move worth offering.
+        # ponytail: the immediate undo only. A limb that goes back two moves later still gets
+        # through; `Plan.backtracks` counts those, and a deeper history filter waits for that count
+        # to actually be a problem.
+        if result.moves:
+            last = result.moves[-1]
+            back = [hid for hid in cands.get(last.moving_limb, []) if hid != last.from_hold_id]
+            if back:
+                cands[last.moving_limb] = back
+            else:
+                cands.pop(last.moving_limb, None)
         if not cands:
             result.stopped = "no reachable candidate for any limb"
             return result
