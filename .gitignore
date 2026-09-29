@@ -31,7 +31,7 @@ venv/
 # CV 데이터셋 및 학습 가중치 (용량이 커 git으로 관리하지 않음)
 /data/
 /datasets/
-*.pt
+# *.pt
 *.pth
 *.ckpt
 *.tflite
