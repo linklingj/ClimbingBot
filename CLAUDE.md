@@ -12,6 +12,7 @@ Phase 1 (RL Controller) 진행 중, Phase 2 (VLM Planner) 착수.
 ClimbingBotUnity/Assets/
   00Scenes/Train.unity        Stage 1 학습 씬 (벽 + ragdoll + 바닥, 16영역)
   00Scenes/Train2.unity       Stage 2 학습 씬 (같은 링, Stage2Environment)
+  00Scenes/Inference.unity    Stage 2 추론 씬 (영역 1개, HUD, 학습기 없이 Play)
   01Scripts/Ragdoll/          ClimberRagdoll, JointDriveController, GroundContact
   01Scripts/Wall/             ClimbingWall, Hold, IWallGenerator
   01Scripts/Testing/          수동 조작 도구, 벽 생성기 둘. 전부 버릴 코드다

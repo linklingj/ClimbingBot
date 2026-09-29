@@ -458,12 +458,24 @@ grasp 150/150, 타깃 limb 분포가 고르다.
     `sequenceCount = 50`.** 50개 중 **48개가 쓰인다** --- test5에서 wall 13과 22가
     완등하지 못해 `requireReachedTop`에 걸린다(play mode에서 skip 로그 확인).
     docs/04의 test5 절이 그 두 벽이 왜 막혔는지 적고 있다.
--   **시작 자세는 plan이 정한다.** move 0의 `pose`에서 움직이는 limb만
-    `from_hold_id`로 되돌리면 그게 루트의 첫 자세다. hips는 손 중점과 발
+-   **시작 자세는 plan이 정한다.** move N의 `pose`에서 움직이는 limb만
+    `from_hold_id`로 되돌리면 그게 그 move 직전의 자세다. hips는 손 중점과 발
     중점 사이 `hipsBias`(0.58) 위치에 둔다 --- Stage 1의 실측 자세(손 +0.42,
     발 −0.58, 1 m 스팬)를 그대로 재현하는 값이고, plan의 스팬은 1 m가
-    아니라서 **캘리브레이션 노브**다. 자세를 못 만들면 `PoseOn`이 false를
-    돌려주고 그 시퀀스는 빠진다.
+    아니라서 **캘리브레이션 노브**다.
+
+    첫 위치에서 자세가 안 만들어지면 hips를 더 낮춰 `0.45`, `0.33`을 차례로
+    시도한다(`k_HipsBiasFallbacks`). 하나로는 부족해서다: **plan의 중간 자세는
+    28%가 두 뼈 IK의 리치 밖이다**(실측, test5 10루트 248 move 중 0.58 단독
+    180개 성공 → 사다리로 243개). 위로 올리는 값(0.70·0.82)은 한 번도 도움이
+    되지 않았다. 셋 다 실패하면 `PoseOn`이 false를 돌려준다 --- move 0에서
+    실패한 것이면 그 시퀀스가 목록에서 빠지고, 중간 move에서 실패한 것이면
+    그 move만 포기하고 move 0에서 시작한다.
+-   **에피소드의 시작 move는 루트 전체에서 뽑는다**(`randomStartMoveChance`,
+    기본 0.75). 에피소드는 늘 몇 move 만에 끝나므로 항상 move 0에서 출발하면
+    루트의 위쪽을 **한 번도 보지 못한다**(stage2-02: 20M 스텝, 23.9 move 중 평균
+    3.8, `Route/Completed` 0). 나머지 확률은 move 0에서 출발해 완등 지표를
+    계속 채운다. 추론용 씬은 0으로 두어 항상 바닥부터 오른다.
 -   **`lockSupportLimbs`는 Stage 2 첫 런에서도 켜 둔다.** 지지 limb까지 풀면
     Stage 1 정책이 곧바로 다 놓고 떨어진다(실측: 36 물리 스텝에 16영역 64 그립 중
     58개가 풀렸다). 잠근 채로는 같은 정책이 plan의 move를 이어서 잡는다 --- 먼저
@@ -478,9 +490,9 @@ grasp 150/150, 타깃 limb 분포가 고르다.
 
 | 지표 | 뜻 |
 |---|---|
-| `Route/Completed` | **완등률** --- plan의 move를 전부 수행한 비율. 끝 pose가 양손 top이므로 `IsToppedOut`과 같다 |
-| `Route/Progress` | 수행한 move 수 / plan의 move 수. 완등률이 아직 0에 가까울 때 먼저 움직이는 값 |
-| `Route/Moves` | 수행한 move 수(절대값) |
+| `Route/Completed` | **완등률** --- plan의 move를 전부 수행한 비율. 끝 pose가 양손 top이므로 `IsToppedOut`과 같다. **move 0에서 시작한 에피소드만 집계한다** |
+| `Route/Progress` | 수행한 move 수 / plan의 move 수. 완등률이 아직 0에 가까울 때 먼저 움직이는 값. 이것도 move 0 시작 에피소드만 |
+| `Route/Moves` | 시작 move 이후 수행한 move 수. 중간에서 시작한 에피소드도 포함하는 유일한 route 지표다 |
 | `Success/<limb>`, `ClearTime/<limb>` | Stage 1과 같은 move 단위 지표. Stage 2에서는 에피소드당 여러 번 기록된다 |
 
 **추락 판정이 루트 밑에서는 잘 안 걸린다(실측).** `maxDrop`은 move 시작
@@ -537,11 +549,19 @@ mlagents-learn config/climber.yaml --run-id=stage1-05
 mlagents-learn config/climber.yaml --run-id=stage2-01 --initialize-from=stage1-05-5M
 ```
 
-씬은 두 개다: `Train.unity`가 Stage 1(`Stage1Environment`), `Train2.unity`가
-Stage 2(`Stage2Environment`, `MaxStep` 0, `moveMaxSteps` 300,
+학습 씬은 두 개다: `Train.unity`가 Stage 1(`Stage1Environment`),
+`Train2.unity`가 Stage 2(`Stage2Environment`, `MaxStep` 0, `moveMaxSteps` 300,
 `lockSupportLimbs` 켬). Train2는 Train의 복사본이라 16각형 링과 풀 설정을 그대로
 쓴다 --- 영역마다 `Stage2Environment`를 붙이고 `Stage1Environment`를 끈
 프리팹 오버라이드다(프리팹 자체는 Stage 1 그대로).
+
+`Inference.unity`는 **학습용이 아니라 보는 용**이다. Train2에서 영역 하나만
+남기고 카메라를 그 벽에 맞춘 씬이고, 학습기 없이 Play만 누르면 된다.
+`randomStartMoveChance = 0`(항상 루트 바닥부터), `showHud = true`(어느 시퀀스의
+몇 번째 move인지, 루트 진행률, 지금까지의 완등 수를 화면 좌상단에 찍는다.
+`showHud`는 16영역이 같은 자리에 겹쳐 그리므로 학습 씬에서는 꺼 둔다).
+Agent의 `BehaviorType`이 `InferenceOnly`이고 모델은 `Assets/05ONNX`의
+체크포인트를 물린다.
 
 `config/climber.yaml`은 ml-agents의 `ppo/Walker.yaml`에서 출발했다.
 `gamma` 0.995 → 0.99가 가장 근본적인 차이 --- 한 번의 limb 이동은 1~2초라

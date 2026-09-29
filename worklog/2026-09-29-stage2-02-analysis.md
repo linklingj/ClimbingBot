@@ -75,3 +75,44 @@ plan 1147 move의 limb 분포로 per-move 성공률을 가중하면 **p = 0.799*
 `Stage2Environment`에 시작 move 랜덤화를 넣고 `stage2-03`을 stage2-02에서 잇는다.
 볼 것 둘: 상단 move의 `Success/<limb>`가 하단과 같은지(= p가 진짜 높이에 따라
 떨어지는지), `Route/Progress`의 5M당 +0.01 기울기가 꺾이는지.
+
+## 추가 — 시작 move 랜덤화와 `Inference.unity`
+
+위 개선 1을 넣었다. `Stage2Environment.randomStartMoveChance`(기본 0.75)로,
+그 확률만큼 에피소드가 루트 전체에서 균등하게 뽑은 move에서 시작한다. 나머지
+25%는 그대로 move 0에서 출발해 완등 지표를 계속 채운다.
+
+-   `Route/Completed`·`Route/Progress`는 **move 0에서 시작한 에피소드만** 집계한다.
+    중간에서 시작한 에피소드를 넣으면 "루트가 짧아져서 올라간 완등률"이 된다.
+-   `Route/Moves`는 `m_Move − m_StartMove`, 즉 **모든** 에피소드가 보고하는
+    유일한 route 지표다. 이번 분석이 쓴 값(E[moves] = p/(1−p))이 바로 이것이다.
+
+**중간 자세의 28%가 두 뼈 IK 리치 밖이었다.** 넣고 나서 첫 실측에서 랜덤 시작이
+자꾸 move 0으로 떨어지길래 재봤더니, test5 10루트 248 move 중 `hipsBias` 0.58
+하나로 만들어지는 자세가 180개(72%)뿐이었다. plan의 중간 자세는 Stage 1이
+저자한 자세보다 넓고 비대칭이다. hips를 낮추는 쪽으로만 사다리를 달았더니
+(`0.58 → 0.45 → 0.33`) **243개(97%)**가 된다 --- 위로 올리는 값(0.70·0.82)은 한
+번도 도움이 안 됐다. 중간 move에서 실패하면 그 move만 포기하고 move 0으로
+떨어지지, 시퀀스를 버리지 않는다(시퀀스를 버리는 건 move 0이 실패할 때뿐이다).
+
+실측(play mode, 200 리셋, chance 0.75): 시작 move 평균 **8.4**, move 0이 28.5%.
+20M을 밑바닥 4 move에 쓰던 분포가 루트 전체로 퍼졌다.
+
+## 추가 — `Inference.unity`
+
+보는 용 씬이다. Train2에서 영역 하나만 남기고 카메라를 그 벽 정면에 맞췄다.
+학습기 없이 Play만 누르면 `Assets/05ONNX`에 물린 모델로 바닥부터 오른다
+(`randomStartMoveChance = 0`). `Stage2Environment.showHud`(기본 꺼짐, 16영역이
+같은 자리에 겹쳐 그리므로)를 켜면 좌상단에 시퀀스 이름·`move n/N`·목표
+limb→hold·루트 진행률·지금까지 완등 수가 나온다. 기존 한 줄짜리 `OnGUI`를
+읽을 수 있게 키우고 배경을 깐 것이다(`GripLoadHud`와 같은 `GUI.matrix` 스케일).
+
+`Train2.unity`는 건드리지 않았다 --- 16영역 그대로다. `showHud` 기본값이 꺼짐이라
+학습 씬에서 저절로 켜지지도 않는다.
+
+## 다음 (갱신)
+
+`stage2-03`을 stage2-02에서 이어 돌린다. 볼 것: `Route/Moves`가 바닥 4 move에
+묶여 있던 것에서 풀리는지, `Route/Progress`(move 0 시작분만)의 5M당 +0.01
+기울기가 꺾이는지. 상단 move가 실제로 더 어려운지는 이제 `Success/<limb>`가
+상단 표본을 받으므로 다음 런에서 처음으로 답이 나온다.

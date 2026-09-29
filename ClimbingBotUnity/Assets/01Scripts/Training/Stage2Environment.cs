@@ -33,6 +33,10 @@ namespace ClimbingBot.Training
         [Tooltip("Skip plans that never reached the top hold. On means Route/Completed reads as a top-out rate; off means it reads as 'finished whatever the planner managed'.")]
         public bool requireReachedTop = true;
 
+        [Tooltip("Chance that an episode starts at a move drawn uniformly from the whole route instead of at move 0. Episodes always die a few moves in, so starting only at the bottom means the upper two thirds of every route are never seen (stage2-02: 20M steps, mean 3.8 of 23.9 moves, Route/Completed 0). 0 climbs from the bottom every time, which is what an inference scene wants.")]
+        [Range(0f, 1f)]
+        public float randomStartMoveChance = 0.75f;
+
         [Header("Start stance")]
         [Tooltip("How far the hips stand off the wall face. Same as Stage 1's stance.")]
         public float hipsDistanceFromWall = 0.26f;
@@ -40,6 +44,10 @@ namespace ClimbingBot.Training
         [Tooltip("Where the hips sit between the feet (0) and the hands (1). 0.58 reproduces Stage 1's measured stance, which puts the hips 0.42 m under the hands and 0.58 m over the feet across a 1 m span. Calibration knob: the planner's stances are not that span, and a stance the two-bone IK cannot fold into is what makes a start pose fail.")]
         [Range(0f, 1f)]
         public float hipsBias = 0.58f;
+
+        [Header("Debug view")]
+        [Tooltip("Draw the route readout. Off by default: a training scene has 16 areas and they would all draw into the same corner. Inference.unity turns it on.")]
+        public bool showHud;
 
         [Header("Colors")]
         public Color normalColor = new Color(0.85f, 0.85f, 0.87f);
@@ -59,11 +67,22 @@ namespace ClimbingBot.Training
         // the failure is logged once rather than every episode.
         static readonly Dictionary<string, Sequence> k_Cache = new Dictionary<string, Sequence>();
 
+        // Hips placements to fall back to. The plan's mid-route stances are wider and more asymmetric
+        // than Stage 1's authored one, and one hips point leaves 28% of them outside the two-bone IK's
+        // reach (measured: 180 of 248 moves over 10 test5 routes posed at hipsBias alone, 243 with
+        // these). Sitting lower is what rescues them -- 0.70 and 0.82 never once helped.
+        static readonly float[] k_HipsBiasFallbacks = { 0.45f, 0.33f };
+
         readonly Dictionary<int, Hold> m_HoldsById = new Dictionary<int, Hold>();
         Sequence m_Sequence;
         int m_Index;
+        int m_Current = -1;
         int m_Move;
+        int m_StartMove;
         bool m_Completed;
+        int m_Attempts;
+        int m_Completions;
+        GUIStyle m_HudStyle;
 
         void Awake()
         {
@@ -102,11 +121,20 @@ namespace ClimbingBot.Training
 
                 Dress(sequence);
 
-                var stance = StanceBefore(sequence.plan.moves[0]);
-                if (!PoseOn(StartHips(stance), stance))
+                var startMove = PickStartMove(sequence.plan.moves.Length);
+                var posed = PoseStance(sequence, startMove);
+                if (!posed && startMove != 0)
                 {
-                    // Deterministic -- the stance is posed from a T every time -- so drop it from the
-                    // list instead of failing on it again every time it comes round.
+                    // One mid-route stance the IK cannot fold into says nothing about the rest of the
+                    // route, so fall back to the bottom rather than throwing the sequence away.
+                    startMove = 0;
+                    posed = PoseStance(sequence, 0);
+                }
+
+                if (!posed)
+                {
+                    // Move 0 is deterministic -- the stance is posed from a T every time -- so drop it
+                    // from the list instead of failing on it again every time it comes round.
                     Debug.LogWarning($"Stage2Environment: start stance of {SequencePath(index)} is out of "
                         + "reach, dropping it. Look at hipsBias, or at the plan's first pose.", this);
                     k_Cache[SequencePath(index)] = null;
@@ -114,7 +142,9 @@ namespace ClimbingBot.Training
                 }
 
                 m_Sequence = sequence;
-                m_Move = 0;
+                m_Current = index;
+                m_Move = startMove;
+                m_StartMove = startMove;
                 m_Completed = false;
                 SetMoveTarget();
                 return true;
@@ -158,6 +188,39 @@ namespace ClimbingBot.Training
             return limb == TargetLimb ? TargetHold : HoldOf(move.pose.HoldId(limb));
         }
 
+        /// <summary>
+        /// Which move of the plan this episode starts on. Uniform over the route, so the moves near
+        /// the top get sampled as often as the ones at the bottom -- which is the point, since
+        /// reaching them by climbing is what the policy cannot do yet.
+        /// </summary>
+        int PickStartMove(int moves)
+        {
+            return UnityEngine.Random.value < randomStartMoveChance ? UnityEngine.Random.Range(0, moves) : 0;
+        }
+
+        /// <summary>
+        /// Plants the climber in the stance the plan has before <paramref name="move"/>, trying the
+        /// lower hips placements if the first one does not fold.
+        /// </summary>
+        bool PoseStance(Sequence sequence, int move)
+        {
+            var stance = StanceBefore(sequence.plan.moves[move]);
+            if (PoseOn(StartHips(stance, hipsBias), stance))
+            {
+                return true;
+            }
+
+            foreach (var bias in k_HipsBiasFallbacks)
+            {
+                if (PoseOn(StartHips(stance, bias), stance))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         void SetMoveTarget()
         {
             var move = m_Sequence.plan.moves[m_Move];
@@ -177,9 +240,25 @@ namespace ClimbingBot.Training
             }
 
             var stats = Academy.Instance.StatsRecorder;
-            stats.Add("Route/Completed", m_Completed ? 1f : 0f);
-            stats.Add("Route/Progress", m_Move / (float)m_Sequence.plan.moves.Length);
-            stats.Add("Route/Moves", m_Move);
+
+            // Moves landed, which is the one number every episode can report: the route it was handed
+            // is 24 moves long whether it started at the bottom or halfway up.
+            stats.Add("Route/Moves", m_Move - m_StartMove);
+
+            // Completion and progress are only about *the whole route*, so only an episode that
+            // started at move 0 gets to vote. Letting a mid-route start count would read as a top-out
+            // rate that went up because the episodes got shorter.
+            if (m_StartMove == 0)
+            {
+                stats.Add("Route/Completed", m_Completed ? 1f : 0f);
+                stats.Add("Route/Progress", m_Move / (float)m_Sequence.plan.moves.Length);
+                m_Attempts++;
+                if (m_Completed)
+                {
+                    m_Completions++;
+                }
+            }
+
             m_Sequence = null;
         }
 
@@ -223,12 +302,12 @@ namespace ClimbingBot.Training
         /// authors the stance; here the holds come first, so the hips go between them and the IK
         /// folds the limbs out to reach.
         /// </summary>
-        Vector3 StartHips(Dictionary<Limb, Hold> stance)
+        Vector3 StartHips(Dictionary<Limb, Hold> stance, float bias)
         {
             var hands = (stance[Limb.LeftHand].wallPosition + stance[Limb.RightHand].wallPosition) * 0.5f;
             var feet = (stance[Limb.LeftFoot].wallPosition + stance[Limb.RightFoot].wallPosition) * 0.5f;
             return wall.transform.TransformPoint(new Vector3((hands.x + feet.x) * 0.5f,
-                Mathf.Lerp(feet.y, hands.y, hipsBias), -hipsDistanceFromWall));
+                Mathf.Lerp(feet.y, hands.y, bias), -hipsDistanceFromWall));
         }
 
         Hold HoldOf(int id)
@@ -350,13 +429,35 @@ namespace ClimbingBot.Training
 
         void OnGUI()
         {
-            if (m_Sequence == null || TargetHold == null)
+            if (!showHud || m_Sequence == null || TargetHold == null)
             {
                 return;
             }
 
-            GUI.Label(new Rect(10, 70, 600, 20), $"STAGE 2  move {m_Move + 1}/{m_Sequence.plan.moves.Length}"
-                + $"  {TargetLimb} -> hold {TargetHold.id}" + (IsTargetReached ? "   REACHED" : ""));
+            if (m_HudStyle == null)
+            {
+                // The default label is 12 px and white on a pale sky, which is not a readout.
+                m_HudStyle = new GUIStyle(GUI.skin.label) { fontSize = 18 };
+                m_HudStyle.normal.textColor = Color.white;
+            }
+
+            // Same trick as GripLoadHud: IMGUI lays out in screen pixels, so scale it or the readout
+            // shrinks to nothing on a large game view.
+            var matrix = GUI.matrix;
+            GUI.matrix = Matrix4x4.Scale(Vector3.one * Mathf.Max(1f, Screen.height / 1080f));
+
+            var moves = m_Sequence.plan.moves.Length;
+            GUI.Box(new Rect(6, 6, 640, 76), GUIContent.none);
+            GUI.Label(new Rect(14, 8, 620, 24), $"STAGE 2   {sequencePrefix}{m_Current}"
+                + $"   move {m_Move + 1}/{moves}" + (m_StartMove > 0 ? $" (from {m_StartMove + 1})" : "")
+                + $"   {TargetLimb} -> hold {TargetHold.id}", m_HudStyle);
+            GUI.Label(new Rect(14, 30, 620, 24), m_Completed ? "TOPPED OUT"
+                : $"route {100f * (m_Move - m_StartMove) / moves:0}%"
+                    + (IsTargetReached ? "   MOVE REACHED" : ""), m_HudStyle);
+            GUI.Label(new Rect(14, 52, 620, 24),
+                $"full routes topped out: {m_Completions}/{m_Attempts}", m_HudStyle);
+
+            GUI.matrix = matrix;
         }
 
         // Scene JSON (docs/07) and the planner's plan.json, as much of them as Stage 2 needs.
