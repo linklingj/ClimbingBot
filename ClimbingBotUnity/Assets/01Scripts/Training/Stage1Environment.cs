@@ -1,9 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using ClimbingBot.Testing;
-#if ODIN_INSPECTOR
-using Sirenix.OdinInspector;
-#endif
 
 namespace ClimbingBot.Training
 {
@@ -55,11 +52,7 @@ namespace ClimbingBot.Training
         [Range(0.3f, 1f)]
         public float reachFraction = 0.95f;
 
-#if ODIN_INSPECTOR
-        [Button("Reset episode (random seed)")]
-#else
         [ContextMenu("Reset episode (random seed)")]
-#endif
         public void ResetEpisodeWithRandomSeed()
         {
             ResetEpisode(Random.Range(int.MinValue, int.MaxValue));
