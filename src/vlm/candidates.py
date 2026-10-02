@@ -22,15 +22,19 @@ class ReachModel:
     controller keeps failing moves the generator called reachable, or if it clears moves the
     generator refused. Numbers from a ~1.7 m climber, not measured against the rig yet."""
 
-    hand_step: float = 1.5  # how far a hand may travel in one move
-    foot_step: float = 1.3
+    # 2026-09-30: step and span all scaled by 0.7 with the generator's spacing, for an easier wall
+    # climbed in smaller moves. min_rise is not scaled -- it keeps hands and feet apart.
+    hand_step: float = 1.05  # how far a hand may travel in one move
+    foot_step: float = 0.91
     min_rise: float = 0.25  # how far the lowest hand must stay above the highest foot
     # How far a limb may reach past its opposite before the pair counts as crossed. 0 means a left
     # limb never sits right of its right partner (sharing one hold is still fine, x is equal then).
     # It is a tolerance knob, not a technique switch -- a cross-through needs a planner that can plan
     # its way out again, and step by step there is no backtracking.
     cross_margin: float = 0.0
-    max_span: float = 2.05  # furthest hand-to-foot distance allowed after the move
+    # 1.435 (0.7x) did not survive minReach 0.4 m in the generator: 6/50 walls climbable, measured
+    # on a Python stand-in for it. 1.6 m is the user's pick among the measured options.
+    max_span: float = 1.6  # furthest hand-to-foot distance allowed after the move
 
 
 def blocked_holds(pose: Pose, limb: str, finish: int | None = None) -> set[int]:

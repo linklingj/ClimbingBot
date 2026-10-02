@@ -1,21 +1,29 @@
 {
   "wall": {"coordinate_system": "wall_local_2d", "width": 4, "height": 6},
   "holds": [
-    {"id": 0, "position": [1.802, 0.084], "color": "white"},
-    {"id": 1, "position": [1.348, 0.5], "color": "white"},
-    {"id": 2, "position": [1.828, 0.888], "color": "white"},
-    {"id": 3, "position": [1.679, 1.3], "color": "green"},
-    {"id": 4, "position": [1.704, 1.743], "color": "white"},
-    {"id": 5, "position": [2.182, 2.169], "color": "white"},
-    {"id": 6, "position": [1.642, 2.17], "color": "white"},
-    {"id": 7, "position": [2.173, 2.584], "color": "white"},
-    {"id": 8, "position": [2.326, 3.106], "color": "white"},
-    {"id": 9, "position": [2.275, 3.541], "color": "white"},
-    {"id": 10, "position": [2.444, 3.985], "color": "white"},
-    {"id": 11, "position": [2.397, 4.583], "color": "white"},
-    {"id": 12, "position": [2.574, 5], "color": "red"}
+    {"id": 0, "position": [1.691, 0.316], "color": "white"},
+    {"id": 1, "position": [1.312, 0.5], "color": "white"},
+    {"id": 2, "position": [1.679, 0.771], "color": "white"},
+    {"id": 3, "position": [1.769, 1.063], "color": "white"},
+    {"id": 4, "position": [1.679, 1.3], "color": "green"},
+    {"id": 5, "position": [2.046, 1.368], "color": "white"},
+    {"id": 6, "position": [1.849, 1.669], "color": "white"},
+    {"id": 7, "position": [1.785, 1.958], "color": "white"},
+    {"id": 8, "position": [2.157, 2.217], "color": "white"},
+    {"id": 9, "position": [1.888, 2.324], "color": "white"},
+    {"id": 10, "position": [1.926, 2.628], "color": "white"},
+    {"id": 11, "position": [2.262, 2.827], "color": "white"},
+    {"id": 12, "position": [1.956, 2.939], "color": "white"},
+    {"id": 13, "position": [2.454, 3.119], "color": "white"},
+    {"id": 14, "position": [2.12, 3.358], "color": "white"},
+    {"id": 15, "position": [2.28, 3.652], "color": "white"},
+    {"id": 16, "position": [2.182, 3.971], "color": "white"},
+    {"id": 17, "position": [2.658, 3.972], "color": "white"},
+    {"id": 18, "position": [2.367, 4.447], "color": "white"},
+    {"id": 19, "position": [2.6, 4.764], "color": "white"},
+    {"id": 20, "position": [2.574, 5], "color": "red"}
   ],
   "routes": [
-    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "start_hold_ids": [3], "top_hold_id": 12}
+    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "start_hold_ids": [4], "top_hold_id": 20}
   ]
 }

@@ -102,7 +102,14 @@ def check_candidates():
 
 
 def check_validator():
-    scene = wall(1)
+    # The first wall whose start pose gives the right hand a free hold to go to: the spread pose below
+    # needs one, and which wall has it changes with every re-export. Free, not just a candidate -- on
+    # a two-start wall the right hand's first candidate can be the left hand's hold.
+    def free_right(s):
+        p = initial_pose(s)
+        return [h for h in candidates(s, p).get("right_hand", []) if h not in p.values()]
+
+    scene = next(s for s in map(wall, WALLS) if free_right(s))
     pose = initial_pose(scene)
     cands = candidates(scene, pose)
     limb, hold_id = next(iter(cands.items()))
@@ -116,7 +123,7 @@ def check_validator():
     # Matching is same-kind only: hand/hand and foot/foot, never hand/foot. Checked on the rule
     # rather than through validate(), which would also reject a shared hold the geometry refuses.
     # On four distinct holds -- the start pose has the hands matched, which is the case below.
-    spread = {**pose, "right_hand": cands["right_hand"][0]}
+    spread = {**pose, "right_hand": free_right(scene)[0]}
     assert len(set(spread.values())) == 4
     for hand in HANDS:  # the other hand's hold is free, both feet's are not
         assert blocked_holds(spread, hand) == {spread[hand], spread["left_foot"], spread["right_foot"]}

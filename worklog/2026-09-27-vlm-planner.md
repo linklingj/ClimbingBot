@@ -606,3 +606,98 @@ selftest에 두 검사를 넣었다 --- start 라인 아래 홀드 ≥ 2, 그리
 다음: (1) 되돌리기 필터에 "유일한 선택지면 허용" 예외, (2) 양손 매칭을 줄이는 쪽 ---
 프롬프트로 안 되면 후보 필터 쪽을 보는 것이 맞다(매칭 pose에서 실패가 몰린다),
 (3) 최단 대비 1.6배를 줄이는 것.
+
+## 벽 난이도 하향: 간격과 reach 0.7배 (2026-09-30)
+
+사용자 지시: 홀드 간 최대 거리를 30% 줄이고 `max_span`/`limits`도 같이 낮춰, 에이전트가 멀리
+뻗는 일을 줄이고 더 안전하게 오르게 한다. 단 손과 발이 너무 가까워지면 안 된다는 조건은 유지.
+
+- 생성기(`TrainingArea.prefab`): `maxReach` 1.2→**0.84**, `maxHoldSpacing` 0.7→**0.49**,
+  `minHoldSpacing` 0.4→**0.28**, `positionOffsetX` 0.4→**0.28**. `Train2.unity`에 있던
+  `maxHoldSpacing` 오버라이드도 0.49로. C# 필드 기본값도 같은 값으로 맞췄다 (`maxReach`
+  기본값이 0이면 새 컴포넌트에서 `BridgeGaps`가 끝나지 않는다).
+- `ReachModel`: `hand_step` 1.5→**1.05**, `foot_step` 1.3→**0.91**, `max_span` 2.05→**1.435**.
+  one-shot 프롬프트의 숫자도 같이 바꿨다. `scene.MAX_REACH` 0.84.
+- **그대로 둔 것:** `min_rise` 0.25(손이 발보다 위에 있어야 하는 규칙이 곧 "너무 가깝지
+  않게"다), `footDropY` 1.0(발 줄을 0.7 m로 올리면 자세가 접힌다), crossing, 매칭 규칙.
+
+Unity 없이 재익스포트할 수 없어서 `RandomWallGenerator`를 파이썬으로 대충 옮겨
+(Catmull-Rom spline, 같은 spacing/bridge/foot pass/EnsureFootHolds) 50시드를 돌려봤다.
+현재 값으로 돌리면 BFS 50/50, greedy 49/50으로 커밋된 벽과 맞아서 근사치로 쓸 만하다.
+
+| | 홀드 수 | BFS | greedy | 손-발 간격 평균/최대 |
+|---|---|---|---|---|
+| 이전 | 13.7 | 50/50 (12\~18) | 49/50 | 1.57 / 2.05 |
+| 0.7배 | 19.8 | 50/50 (21\~29) | 45/50 | 1.10 / 1.43 |
+| 0.7배 + footDrop 0.7 | 18.8 | 50/50 (21\~31) | 49/50 | 1.09 / 1.43 |
+
+footDrop 0.7은 greedy가 좋아지지만 손-발 간격을 줄이는 쪽이라 채택하지 않았다.
+
+**주의: move 수가 약 1.6배로 늘어난다.** stage2-02 분석대로 완등률은 move당 성공률의
+move수 제곱이다. move 하나하나는 쉬워지지만 개수가 늘어서 상쇄될 수 있다 --- Stage 2
+완등률로 확인할 것.
+
+다음:
+1. 에디터에서 "Export walls"로 50벽 재익스포트 → `python -m vlm.selftest` (지금은 옛 벽이
+   `MAX_REACH` 0.84 연결성 검사에서 떨어진다, 의도된 상태).
+2. 새 벽으로 plan을 다시 뽑아야 Stage 2가 새 난이도로 돈다(test5 plan은 옛 벽 기준).
+   API 호출이 필요하므로 벽 하나로 먼저 확인하고 호출 수를 말한 뒤 돌린다.
+
+**추가(같은 날): 발 홀드 2배 드물게.** `footSpacingScale`(기본 2) 필드를 추가했다. 발 패스
+(`AddFootHolds`)만 spacing 범위에 이 값을 곱해 굽는다(0.56\~0.98 m). jitter 한도는 곱하기 전
+손 줄 간격으로 잰다 --- 넓힌 간격으로 재면 `maxReach - MaxSpacing`이 음수라 jitter가 0이
+된다. `EnsureFootHolds`의 start 아래 두 홀드는 그대로 보장된다.
+
+근사 생성기 결과: 발 패스 홀드가 벽당 5.2 → **2.6개**(정확히 절반), 전체 19.8 → 17.2.
+BFS **49/50**(21\~32 move), greedy 46/50. **못 푸는 벽 하나(근사 seed 0)는 span 때문이다** ---
+`max_span` 1.5면 25 move로 풀리고, `foot_step`을 늘려서는 안 풀린다. 실제 익스포트에서도
+생기면 `selftest.UNCLIMBABLE`의 집합 일치 검사에서 걸린다. 그때 `max_span`을 올릴지,
+그 벽을 UNCLIMBABLE로 기록할지 정할 것.
+
+**추가(같은 날): 좌우 jitter 강화 + `minReach` 0.4 m.** 사용자 지시.
+
+- jitter는 `(maxReach - maxHoldSpacing)/2`로 clamp돼서 `positionOffsetX`를 올려도 실제로는
+  0.175 m에서 막혔다. clamp를 없애고(`BridgeGaps`가 어차피 `maxReach`를 보장한다)
+  `positionOffsetX` 0.35 m. 근사 기준 연속 홀드 좌우 차 평균 0.26 → 0.41 m.
+- `minReach` 필드(0.4 m): 손 줄(이미 놓인 홀드와 start/top), 발 줄, start 쌍 간격,
+  `EnsureFootHolds` 간격에 모두 적용. `minHoldSpacing`도 0.4로 올렸다(버려지는 홀드가 줄어서
+  같은 minReach에서 6→16/50, span 1.6에서 28→39/50).
+- **문제: span 1.435로는 6/50만 풀린다.** 막는 규칙은 span이다(span 2.05면 48/50, rise/crossing/
+  foot_step을 풀어도 그대로). 홀드 수가 17 → 13\~14개가 되면서 발이 따라갈 자리가 사라진다.
+  minReach 0.25면 1.435로도 47/50이었다.
+- 선택지를 보여 주고 **사용자가 고른 조합**: minReach 0.4 + `max_span` **1.6** + `footSpacingScale`
+  **1**(직전 요청인 발 두 배 드물게를 되돌림). 근사 BFS **39/50**, greedy 29/50, 손-발 평균 1.26 m.
+- minReach 예외: `BridgeGaps` 중점이 start 쌍의 다른 홀드 옆에 떨어질 수 있다(3/50, 최소 0.28 m).
+  연결성을 우선해 둔다. 그래서 selftest에 최소 거리 assert는 넣지 않았다.
+
+**재익스포트 후 selftest가 걸릴 곳:** `UNCLIMBABLE`(근사로는 11개 --- 실제 집합으로 채울 것),
+greedy 하한 `0.85 * len(WALLS)`(근사 29/50), 초기 pose 후보 검사. 실제 숫자를 보고 하한을
+다시 정하거나 규칙을 조정할 것.
+
+**추가(같은 날): Inference 씬 값으로 고정.** 사용자가 `Inference.unity`의 생성기 오버라이드로
+맞춘 값을 `TrainingArea.prefab`과 C# 기본값에 옮겼다: `maxReach` 0.7, `minReach` 0.5,
+`minHoldSpacing` 0.3, `maxHoldSpacing` 0.4, `positionOffsetX` 0.45, `footDropY` 0.8,
+`minKnots` 3, `footSpacingScale` 1. `Train2.unity`의 `maxHoldSpacing` 오버라이드도 0.4로.
+`scene.MAX_REACH` 0.7. `ReachModel`은 그대로(1.05 / 0.91 / span 1.6). `exportCount`(씬은 100,
+프리팹은 50)는 벽 모양과 무관해 옮기지 않았다.
+
+- **이 조합에서 minReach 0.5는 지켜지지 않는다.** 0.5 > `maxReach`/2 = 0.35라, minReach
+  필터가 만든 0.7 m 넘는 틈을 `BridgeGaps` 중점이 메우면서 가까운 쌍이 생긴다. 근사 50벽:
+  벽당 중점 4.2개, **50/50 벽에 0.5 m 미만 쌍**(최소 0.21, 중앙값 0.40). 전부 중점이 낀 쌍.
+  코드는 연결성 우선 그대로 두고 주석/문서에 적었다.
+- 근사 생성기: 홀드 15.2개, BFS **38/50**(18\~28 move), greedy 30/50, 손-발 평균 1.26 m.
+- 디스크의 `walls/`(미커밋 재익스포트)는 이 값이 아니다 --- 최근접 쌍 0.14 m, 홀드 평균 20개로
+  처음 0.7배 설정(minReach 없음)의 익스포트로 보인다. 그 벽에서 selftest 전부 통과:
+  50/50 solvable(18\~26 move), greedy 46/50(steps)·47/50(one-shot), 발 후보 44/50.
+- `check_validator`가 wall 1 초기 pose의 right_hand 후보를 가정하고 있어 새 벽에서 KeyError.
+  right_hand 후보가 있는 첫 벽을 쓰도록 고쳤다.
+
+다음: 이 값으로 "Export walls" → selftest. 근사대로면 `UNCLIMBABLE`(약 12개)과 greedy 하한
+(0.85, 근사 30/50)이 걸린다.
+
+**추가: 현재 값 재테스트.** 근사 생성기로 현재 값의 50벽을 Scene JSON으로 떨궈 selftest 전체를
+그대로 돌렸다(`scene.WALL_DIR`만 바꿔서). 실패 셋: `check_solvable`(못 푸는 벽 12개),
+`check_steps` greedy 30/50, `check_oneshot` 31/50(하한 0.85). 나머지는 통과. 못 푸는 12개는
+**span이 막는다** --- `max_span` 1.75면 8/12, 2.05면 12/12가 풀리고 `hand_step`·crossing은 0/12.
+`check_validator` fixture를 또 고쳤다: two-start 벽에서 right_hand의 첫 후보가 왼손 홀드일 수
+있어서, 비어 있는 후보가 있는 첫 벽을 쓴다.

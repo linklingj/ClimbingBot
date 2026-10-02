@@ -95,7 +95,7 @@ limb당 `max_per_limb`(6)개까지 자르는 **순위는 top까지의 거리**�
     뒤바뀐 자세였다. `cross_margin`은 이제 tolerance knob이고 기술 스위치가
     아니다. cross-through를 허용하려면 **꼬인 자세에서 빠져나올 계획을
     세울 수 있는** planner가 필요한데, step-by-step에는 backtracking이 없다.
--   **span** --- 이동 후 손-발 최대 거리가 `max_span`(2.05 m)을 넘지 않는다.
+-   **span** --- 이동 후 손-발 최대 거리가 `max_span`(1.6 m)을 넘지 않는다.
     step만으로는 발이 그대로인 채 손만 멀어지는 자세를 못 막는다.
 
 `ReachModel`의 이 값들은 1.7 m 인체 기준 추정치이고 ragdoll로 실측한 것이
@@ -119,6 +119,30 @@ crossing은 같은 날 반대로 조였다(위). 둘이 부딪히는 자리가 �
 없다). 그래서 **2.05 m로 올렸다.** `selftest.UNCLIMBABLE`은 못 푸는 벽을 **집합
 일치**로 검사하고 지금은 빈 집합이다 --- 규칙을 조여 못 푸는 벽이 생기면 거기서
 걸린다.
+
+**2026-09-30에 벽 난이도를 낮췄다.** 생성기의 홀드 간격(`maxReach`,
+`min/maxHoldSpacing`, `positionOffsetX`)과 `ReachModel`의 `hand_step`/
+`foot_step`/`max_span`을 **전부 0.7배**로 줄였다(손 1.5→**1.05**, 발 1.3→**0.91**,
+span 2.05→**1.435** m). 홀드가 촘촘해지고 한 move가 짧아져서, 에이전트가 멀리 뻗을
+일이 줄어드는 대신 move 수가 늘어난다. **`min_rise`(0.25 m)는 그대로 둔다** --- 손과
+발이 너무 가까워지지 않게 하는 규칙이라 난이도와 같이 줄일 값이 아니다. 같은 이유로
+`footDropY`(1.0 m)도 그대로다 --- 발 줄이 손 줄 1 m 아래에 있어야 자세가 펴진다.
+재익스포트 전 파이썬 근사 생성기로 잰 값: BFS **50/50**(21\~29 move, 이전 12\~18),
+greedy 45/50, greedy 경로의 손-발 간격 평균 1.57 → **1.10 m**.
+
+**같은 날 다시 조정: `minReach` 0.4 m, 좌우 jitter 강화, `max_span` 1.6 m.** 홀드끼리
+너무 붙지 않게 생성기에 최소 거리 `minReach`(0.4 m)를 넣고(`minHoldSpacing`도 0.4로),
+jitter를 `maxReach`로 clamp하던 것을 풀어 `positionOffsetX` 0.35 m가 그대로 들어가게
+했다(이전에는 clamp 때문에 실제 0.175 m였다). 그러자 **span 1.435 m로는 50벽 중 6개만
+풀렸다** --- 홀드가 약 17개에서 14개로 줄면서 발이 손을 따라 올라올 자리가 없어진다.
+최소 거리를 유지하는 쪽을 택해 `max_span`을 **1.6 m**로 올리고, 잠깐 두 배로 했던 발 줄
+간격(`footSpacingScale`)도 1로 되돌렸다. 근사 생성기 기준 BFS **39/50**(21\~29 move),
+greedy 29/50, 손-발 간격 평균 1.26 m. **못 푸는 벽 11개는 알고 받아들인 값이다.**
+
+**최종: Inference 씬에서 사용자가 맞춘 값으로 고정했다(같은 날).** `maxReach` 0.7,
+`minReach` 0.5, spacing 0.3\~0.4, `positionOffsetX` 0.45, `footDropY` 0.8, `minKnots` 3.
+`ReachModel`은 그대로(손 1.05, 발 0.91, span 1.6). 근사 생성기 기준 BFS **38/50**(18\~28
+move), greedy 30/50, 손-발 간격 평균 1.26 m.
 
 ### 초기 포즈
 
@@ -175,9 +199,9 @@ VLM에는 두 종류의 정보를 함께 제공한다.
     {"id": 14, "position": [0.8, 2.0]}
   ],
   "limits": {
-    "hand_step": 1.5,
-    "foot_step": 1.3,
-    "max_span": 2.05
+    "hand_step": 1.05,
+    "foot_step": 0.91,
+    "max_span": 1.6
   }
 }
 ```
@@ -532,10 +556,10 @@ hand-foot은 금지라고 같이 못박는다. 점유가 그 자체로 피할 �
 모델이 정리하듯 쓴다.
 
 **span도 프롬프트에 숫자로 들어간다** --- 매 move 후 각 손과 각 발의 거리
-중 최대가 `limits.max_span`(2.05 m)을 넘지 못한다. step과 별개의 한계라는
-것, 발이 그대로면 손이 1 m만 가도 걸린다는 것, 그러면 발을 먼저 올리라는
+중 최대가 `limits.max_span`(1.6 m)을 넘지 못한다. step과 별개의 한계라는
+것, 발이 그대로면 손이 0.8 m만 가도 걸린다는 것, 그러면 발을 먼저 올리라는
 것까지 같이 쓴다. payload의 `limits`에도 `max_span`이 들어가고, 프롬프트에
-박힌 2.05라는 숫자가 `ReachModel.max_span`과 같은지는 selftest가 본다.
+박힌 1.6이라는 숫자가 `ReachModel.max_span`과 같은지는 selftest가 본다.
 
 **프롬프트는 짧게 유지한다.** 2026-09-28에 두 프롬프트를 절반 아래로 줄였다
 (각각 45줄 → 23줄). 심판이 강제하는 규칙을 프롬프트에서 길게 변호할 필요가
@@ -557,11 +581,24 @@ Unity 쪽에만 있다.
 벽 모양에 영향을 주는 값을 건드리면 **에디터에서 "Export walls"를 다시
 눌러 커밋한다.** 익스포트는 결정적이다(같은 시드 → 같은 바이트).
 
-지금 커밋된 익스포트는 **50벽**(시드 0\~49)이고 생성기 값은
-`maxReach` **1.2 m**, `maxHoldSpacing` **0.7 m**, `minHoldSpacing` 0.4 m,
-`footDropY` 1.0 m, `twoStartHoldsChance` 0.5다. `scene.MAX_REACH`가 `maxReach`를
-따라가야 하고(selftest의 연결성 검사가 그 숫자를 쓴다), `ReachModel.hand_step`이
-그보다 커야 벽이 construction으로 막히지 않는다(1.5 > 1.2).
+익스포트는 **50벽**(시드 0\~49)이고 생성기 값은
+`maxReach` **0.7 m**, `minReach` **0.5 m**(홀드 간 최소 거리), `maxHoldSpacing`
+**0.4 m**, `minHoldSpacing` 0.3 m, `positionOffsetX` 0.45 m(clamp 없음),
+`footDropY` 0.8 m, `footSpacingScale` 1, `minKnots` 3, `twoStartHoldsChance` 0.5다
+(2026-09-30에 Inference 씬에서 맞춘 값으로 고정했다. 이전은 `maxReach` 1.2, 간격
+0.4\~0.7, jitter 0.4 → 실제 0.25).
+
+**`minReach`는 `BridgeGaps`가 넣은 중점에는 지켜지지 않는다.** 중점은 자기가 가른 두
+홀드에서 `maxReach`/2(0.35 m) 떨어질 뿐이고, 연결성이 우선이다. 지금은
+`minReach` 0.5 > 0.35라서 이게 예외가 아니라 보통이다 --- `minReach` 필터가 spline
+홀드를 버려 0.7 m 넘는 틈을 만들고, 그 틈을 중점이 메운다. 근사 50벽 기준 벽당 중점
+약 4개, **모든 벽에 0.5 m 미만 쌍이 있다**(최소 0.21, 중앙값 0.40 m). 실효 최소 거리는
+0.5가 아니라 대략 0.35\~0.4 m다. 최소 거리를 정말 지키려면 `minReach` ≤ `maxReach`/2로
+둬야 한다.
+
+`scene.MAX_REACH`가 `maxReach`를 따라가야 하고(selftest의 연결성 검사가 그 숫자를
+쓴다), `ReachModel.hand_step`이 그보다 커야 벽이 construction으로 막히지 않는다
+(1.05 > 0.7).
 
 `selftest`는 읽어들인 벽이 이쪽에서 필요한 성질을 갖췄는지 검사한다 ---
 id 유일성, start/top 존재, 벽 안쪽 좌표, start 아래에 홀드가 있는지, 그리고

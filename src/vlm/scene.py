@@ -22,7 +22,7 @@ FEET = ("left_foot", "right_foot")
 # it are further apart than this, and ReachModel.hand_step has to cover it or a wall is unclimbable
 # by construction. Only the checks in selftest use it -- if it stops matching the editor, they fail,
 # which is the point.
-MAX_REACH = 1.2
+MAX_REACH = 0.7
 
 
 @dataclass

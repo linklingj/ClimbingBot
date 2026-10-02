@@ -3162,7 +3162,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3875240236828076740, guid: 94d47f258362d456b8496a814bb7cbdb, type: 3}
       propertyPath: maxHoldSpacing
-      value: 0.7
+      value: 0.4
       objectReference: {fileID: 0}
     - target: {fileID: 5960045631350785823, guid: 94d47f258362d456b8496a814bb7cbdb, type: 3}
       propertyPath: m_LocalPosition.x

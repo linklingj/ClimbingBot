@@ -1,23 +1,32 @@
 {
   "wall": {"coordinate_system": "wall_local_2d", "width": 4, "height": 6},
   "holds": [
-    {"id": 0, "position": [1.905, 0.422], "color": "white"},
-    {"id": 1, "position": [2.435, 0.5], "color": "white"},
-    {"id": 2, "position": [1.626, 0.878], "color": "white"},
-    {"id": 3, "position": [2.134, 1.034], "color": "white"},
-    {"id": 4, "position": [1.873, 1.3], "color": "green"},
-    {"id": 5, "position": [2.427, 1.3], "color": "green"},
-    {"id": 6, "position": [1.024, 1.475], "color": "white"},
-    {"id": 7, "position": [1.935, 1.648], "color": "white"},
-    {"id": 8, "position": [1.444, 1.995], "color": "white"},
-    {"id": 9, "position": [1.471, 2.391], "color": "white"},
-    {"id": 10, "position": [1.11, 2.994], "color": "white"},
-    {"id": 11, "position": [1.468, 3.412], "color": "white"},
-    {"id": 12, "position": [1.361, 3.912], "color": "white"},
-    {"id": 13, "position": [1.829, 4.51], "color": "white"},
-    {"id": 14, "position": [2.247, 5], "color": "red"}
+    {"id": 0, "position": [2.001, 0.142], "color": "white"},
+    {"id": 1, "position": [1.692, 0.451], "color": "white"},
+    {"id": 2, "position": [2.457, 0.5], "color": "white"},
+    {"id": 3, "position": [1.361, 0.839], "color": "white"},
+    {"id": 4, "position": [2.326, 0.874], "color": "white"},
+    {"id": 5, "position": [1.924, 1.126], "color": "white"},
+    {"id": 6, "position": [1.529, 1.155], "color": "white"},
+    {"id": 7, "position": [1.873, 1.3], "color": "green"},
+    {"id": 8, "position": [2.261, 1.3], "color": "green"},
+    {"id": 9, "position": [1.806, 1.529], "color": "white"},
+    {"id": 10, "position": [1.123, 1.554], "color": "white"},
+    {"id": 11, "position": [1.404, 1.786], "color": "white"},
+    {"id": 12, "position": [1.281, 2.166], "color": "white"},
+    {"id": 13, "position": [1.205, 2.452], "color": "white"},
+    {"id": 14, "position": [1.289, 2.834], "color": "white"},
+    {"id": 15, "position": [1.592, 3.014], "color": "white"},
+    {"id": 16, "position": [1.766, 3.281], "color": "white"},
+    {"id": 17, "position": [1.427, 3.307], "color": "white"},
+    {"id": 18, "position": [1.299, 3.617], "color": "white"},
+    {"id": 19, "position": [1.909, 3.649], "color": "white"},
+    {"id": 20, "position": [1.755, 4.048], "color": "white"},
+    {"id": 21, "position": [2.014, 4.371], "color": "white"},
+    {"id": 22, "position": [2.128, 4.72], "color": "white"},
+    {"id": 23, "position": [2.247, 5], "color": "red"}
   ],
   "routes": [
-    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], "start_hold_ids": [4, 5], "top_hold_id": 14}
+    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], "start_hold_ids": [7, 8], "top_hold_id": 23}
   ]
 }

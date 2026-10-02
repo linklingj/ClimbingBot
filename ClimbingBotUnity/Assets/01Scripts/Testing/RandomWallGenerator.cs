@@ -35,28 +35,34 @@ namespace ClimbingBot.Testing
         [Tooltip("Height where the spline begins. Below the start hold, so the route also has holds under it.")]
         public float splineBottomY = 0.5f;
 
-        public int minKnots = 2;
+        public int minKnots = 3;
         public int maxKnots = 4;
         public float sideMargin = 0.5f;
 
         [Header("Hold placement")]
         [Tooltip("Spacing along the spline is drawn per hold from this range, so the route is not evenly rungged.")]
-        public float minHoldSpacing = 0.35f;
+        public float minHoldSpacing = 0.3f;
 
-        public float maxHoldSpacing = 0.6f;
+        public float maxHoldSpacing = 0.4f;
 
-        [Tooltip("Sideways jitter per hold, for a less mechanical line. Clamped to (maxReach - maxHoldSpacing) / 2 so no gap can exceed maxReach.")]
-        public float positionOffsetX;
+        [Tooltip("Sideways jitter per hold, for a less mechanical line. Not clamped: a gap the jitter widens past maxReach is halved by BridgeGaps afterwards.")]
+        public float positionOffsetX = 0.45f;
 
-        [Tooltip("Upper bound on the distance between consecutive holds.")]
-        public float maxReach;
+        [Tooltip("Upper bound on the distance between consecutive holds. src/vlm scene.MAX_REACH mirrors it, and ReachModel.hand_step has to stay above it.")]
+        public float maxReach = 0.7f;
+
+        [Tooltip("No two holds closer than this, bar BridgeGaps midpoints: those halve a gap wider than maxReach and only clear maxReach / 2. Above that, the midpoints undercut it.")]
+        public float minReach = 0.5f;
 
         [Tooltip("Lowest a generated foot hold may sit. The wall's floor is at 0, and a hold on the floor is not something to stand on.")]
         public float footHoldFloorY = 0.15f;
 
         [Header("Foot holds")]
         [Tooltip("Second pass down the same curve, this far lower. One line of holds makes the feet fight the hands for it. 0 turns the pass off.")]
-        public float footDropY = 1f;
+        public float footDropY = 0.8f;
+
+        [Tooltip("The foot pass draws its spacing from the hand range times this, so foot holds come this many times sparser. The two holds under the start line are guaranteed separately (EnsureFootHolds).")]
+        public float footSpacingScale = 1f;
 
         [Header("Export")]
         [Tooltip("How many walls the export button writes, seeded 0..count-1.")]
@@ -90,10 +96,14 @@ namespace ClimbingBot.Testing
             {
                 // The spline ends on the top hold and passes through the start hold, so drop whatever
                 // it drops on them rather than stacking two holds in one spot. Half the *tightest*
-                // spacing, so this never eats a hold that is legitimately its own.
-                var overlap = minHoldSpacing * 0.5f;
+                // spacing, so this never eats a hold that is legitimately its own -- or minReach, when
+                // that is wider.
+                var overlap = Mathf.Max(minHoldSpacing * 0.5f, minReach);
                 if (startHolds.Exists(start => Vector2.Distance(wallPosition, start) < overlap)) continue;
                 if (Vector2.Distance(wallPosition, topHold) < overlap) continue;
+
+                // Arc spacing alone does not keep holds apart once jitter pulls two towards each other.
+                if (route.Exists(h => Vector2.Distance(h.position, wallPosition) < minReach)) continue;
 
                 route.Add((wallPosition, HoldRole.Normal));
             }
@@ -209,23 +219,29 @@ namespace ClimbingBot.Testing
             // Translating a curve does not change its shape or its arc length, so re-baking and
             // subtracting is the dropped spline. A fresh seed so the spacing and jitter are drawn
             // again rather than copying the hand line's rungs one drop lower.
-            foreach (var wallPosition in BakeWallPositions(wall, container, seed + 1, footDropY))
+            foreach (var wallPosition in BakeWallPositions(wall, container, seed + 1, footDropY, footSpacingScale))
             {
                 // The drop runs the bottom of the curve into the floor.
                 if (wallPosition.y < wall.holdRadius) continue;
 
-                // Nothing closer than the route's own tightest spacing is a hold of its own. Checked
-                // against what is already placed, so this pass does not crowd itself either.
-                if (route.Exists(h => Vector2.Distance(h.position, wallPosition) < minHoldSpacing)) continue;
+                // Nothing closer than the route's own tightest spacing (or minReach) is a hold of its
+                // own. Checked against what is already placed, so this pass does not crowd itself either.
+                var clearance = Mathf.Max(minHoldSpacing, minReach);
+                if (route.Exists(h => Vector2.Distance(h.position, wallPosition) < clearance)) continue;
 
                 route.Add((wallPosition, HoldRole.Normal));
             }
         }
 
         /// <summary>
-        /// Spline spacing and jitter alone keep consecutive holds within reach, but start and top
-        /// sit where they are told and can land further from their neighbours than the spline hold
-        /// they replaced. Halving any gap that is still too wide bounds every gap at maxReach.
+        /// Unclamped jitter can pull consecutive holds out of reach, and start and top sit where they
+        /// are told and can land further from their neighbours than the spline hold they replaced. Halving any gap that is still too wide bounds every gap at maxReach.
+        ///
+        /// Midpoints do not honour minReach -- connectivity wins. They sit over maxReach / 2 from the
+        /// pair they split, and can land nearer a third hold. With minReach above maxReach / 2 (0.5
+        /// against 0.7) that is the common case, not the exception: the minReach filter leaves gaps
+        /// this has to halve, measured on a Python stand-in at ~4 midpoints and a pair under 0.5 m on
+        /// every wall.
         /// </summary>
         void BridgeGaps(List<(Vector2 position, HoldRole role)> route)
         {
@@ -262,9 +278,9 @@ namespace ClimbingBot.Testing
                 // Stepping down from the start line rather than from the lowest hold when that hold is
                 // itself above the line: either way the new hold lands below it, so this terminates.
                 var from = Mathf.Min(lowest.y, startHoldY);
-                var gap = (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing));
-                var jitter = Mathf.Min(positionOffsetX, Mathf.Max(0f, (maxReach - maxHoldSpacing) * 0.5f));
-                var x = lowest.x + (float)(rng.NextDouble() * 2.0 - 1.0) * jitter;
+                var gap = Mathf.Max(minReach,
+                    (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing)));
+                var x = lowest.x + (float)(rng.NextDouble() * 2.0 - 1.0) * positionOffsetX;
                 var y = from - gap;
                 if (y < footHoldFloorY)
                 {
@@ -293,7 +309,8 @@ namespace ClimbingBot.Testing
 
             // A spacing, not a reach: the pair is one gap apart, so BridgeGaps has nothing to add
             // between them and the hands start a shoulder width apart rather than at full stretch.
-            var gap = (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing));
+            var gap = Mathf.Max(minReach,
+                (float)(minHoldSpacing + rng.NextDouble() * (maxHoldSpacing - minHoldSpacing)));
             var toTheRight = first.x + gap <= wall.width - sideMargin;
             holds.Add(new Vector2(toTheRight ? first.x + gap : first.x - gap, startHoldY));
             return holds;
@@ -363,10 +380,11 @@ namespace ClimbingBot.Testing
         }
 
         /// <summary>One bake, in wall-local 2D, with the whole pass moved down by dropY.</summary>
-        List<Vector2> BakeWallPositions(ClimbingWall wall, SplineContainer container, int seed, float dropY)
+        List<Vector2> BakeWallPositions(ClimbingWall wall, SplineContainer container, int seed, float dropY,
+            float spacingScale = 1f)
         {
             var positions = new List<Vector2>();
-            foreach (var worldPosition in BakeAlongSpline(wall, container, seed))
+            foreach (var worldPosition in BakeAlongSpline(wall, container, seed, spacingScale))
             {
                 var local = wall.transform.InverseTransformPoint(worldPosition);
                 positions.Add(new Vector2(local.x, local.y - dropY));
@@ -380,7 +398,7 @@ namespace ClimbingBot.Testing
         /// HideAndDontSave and it owns their lifetime, so they are read for position and dropped --
         /// the wall keeps real, serialized holds instead.
         /// </summary>
-        List<Vector3> BakeAlongSpline(ClimbingWall wall, SplineContainer container, int seed)
+        List<Vector3> BakeAlongSpline(ClimbingWall wall, SplineContainer container, int seed, float spacingScale)
         {
             var instantiate = container.gameObject.AddComponent<SplineInstantiate>();
             instantiate.Container = container;
@@ -389,13 +407,13 @@ namespace ClimbingBot.Testing
                 new SplineInstantiate.InstantiableItem { Prefab = wall.holdPrefab, Probability = 1f }
             };
             instantiate.InstantiateMethod = SplineInstantiate.Method.SpacingDistance;
-            instantiate.MinSpacing = Mathf.Min(minHoldSpacing, maxHoldSpacing);
-            instantiate.MaxSpacing = Mathf.Max(minHoldSpacing, maxHoldSpacing);
+            instantiate.MinSpacing = Mathf.Min(minHoldSpacing, maxHoldSpacing) * spacingScale;
+            instantiate.MaxSpacing = Mathf.Max(minHoldSpacing, maxHoldSpacing) * spacingScale;
 
-            // The widest spacing is the one that can breach maxReach, so clamp jitter against that.
-            var jitter = Mathf.Min(positionOffsetX, Mathf.Max(0f, (maxReach - instantiate.MaxSpacing) * 0.5f));
-            instantiate.MinPositionOffset = new Vector3(-jitter, 0f, 0f);
-            instantiate.MaxPositionOffset = new Vector3(jitter, 0f, 0f);
+            // Not clamped against maxReach any more: the clamp held jitter to 0.175 m at these
+            // spacings, and BridgeGaps bounds the gaps afterwards anyway.
+            instantiate.MinPositionOffset = new Vector3(-positionOffsetX, 0f, 0f);
+            instantiate.MaxPositionOffset = new Vector3(positionOffsetX, 0f, 0f);
             instantiate.PositionSpace = SplineInstantiate.OffsetSpace.Local;
             instantiate.Seed = seed;
             EnableRandomXOffset(instantiate);

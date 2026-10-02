@@ -2667,14 +2667,16 @@ MonoBehaviour:
   twoStartHoldsChance: 0.5
   topHoldY: 5
   splineBottomY: 0.5
-  minKnots: 2
+  minKnots: 3
   maxKnots: 4
   sideMargin: 1
-  minHoldSpacing: 0.4
-  maxHoldSpacing: 0.7
-  positionOffsetX: 0.4
-  maxReach: 1.2
-  footDropY: 1
+  minHoldSpacing: 0.3
+  maxHoldSpacing: 0.4
+  positionOffsetX: 0.45
+  maxReach: 0.7
+  minReach: 0.5
+  footDropY: 0.8
+  footSpacingScale: 1
   exportCount: 50
   normalColor: {r: 0.85, g: 0.85, b: 0.87, a: 1}
   startColor: {r: 0.35, g: 0.75, b: 0.35, a: 1}

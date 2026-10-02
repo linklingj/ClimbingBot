@@ -1,19 +1,23 @@
 {
   "wall": {"coordinate_system": "wall_local_2d", "width": 4, "height": 6},
   "holds": [
-    {"id": 0, "position": [1.611, 0.5], "color": "white"},
-    {"id": 1, "position": [1.495, 0.942], "color": "white"},
-    {"id": 2, "position": [1.621, 1.3], "color": "green"},
-    {"id": 3, "position": [2.121, 1.3], "color": "green"},
-    {"id": 4, "position": [1.719, 1.563], "color": "white"},
-    {"id": 5, "position": [1.559, 2.253], "color": "white"},
-    {"id": 6, "position": [1.331, 2.757], "color": "white"},
-    {"id": 7, "position": [1.425, 3.396], "color": "white"},
-    {"id": 8, "position": [1.348, 4.028], "color": "white"},
-    {"id": 9, "position": [1.181, 4.471], "color": "white"},
-    {"id": 10, "position": [1.26, 5], "color": "red"}
+    {"id": 0, "position": [1.633, 0.205], "color": "white"},
+    {"id": 1, "position": [1.596, 0.5], "color": "white"},
+    {"id": 2, "position": [1.676, 0.808], "color": "white"},
+    {"id": 3, "position": [1.621, 1.3], "color": "green"},
+    {"id": 4, "position": [1.971, 1.3], "color": "green"},
+    {"id": 5, "position": [1.489, 1.726], "color": "white"},
+    {"id": 6, "position": [1.486, 2.08], "color": "white"},
+    {"id": 7, "position": [1.436, 2.527], "color": "white"},
+    {"id": 8, "position": [1.399, 2.969], "color": "white"},
+    {"id": 9, "position": [1.282, 3.279], "color": "white"},
+    {"id": 10, "position": [1.305, 3.75], "color": "white"},
+    {"id": 11, "position": [1.278, 4.096], "color": "white"},
+    {"id": 12, "position": [1.31, 4.412], "color": "white"},
+    {"id": 13, "position": [1.221, 4.846], "color": "white"},
+    {"id": 14, "position": [1.26, 5], "color": "red"}
   ],
   "routes": [
-    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "start_hold_ids": [2, 3], "top_hold_id": 10}
+    {"id": 0, "hold_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], "start_hold_ids": [3, 4], "top_hold_id": 14}
   ]
 }
