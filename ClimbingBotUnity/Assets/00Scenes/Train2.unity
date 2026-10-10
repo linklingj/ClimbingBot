@@ -2634,7 +2634,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 4
   requireReachedTop: 1
@@ -2921,7 +2921,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 14
   requireReachedTop: 1
@@ -3341,7 +3341,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 2
   requireReachedTop: 1
@@ -3618,7 +3618,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 5
   requireReachedTop: 1
@@ -3905,7 +3905,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 9
   requireReachedTop: 1
@@ -4635,7 +4635,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 15
   requireReachedTop: 1
@@ -4780,7 +4780,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 12
   requireReachedTop: 1
@@ -6110,7 +6110,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 1
   requireReachedTop: 1
@@ -6255,7 +6255,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 11
   requireReachedTop: 1
@@ -6949,7 +6949,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 8
   requireReachedTop: 1
@@ -7383,7 +7383,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 13
   requireReachedTop: 1
@@ -9012,7 +9012,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 7
   requireReachedTop: 1
@@ -9441,7 +9441,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 6
   requireReachedTop: 1
@@ -10307,7 +10307,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 10
   requireReachedTop: 1
@@ -10741,7 +10741,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 3
   requireReachedTop: 1
@@ -11646,7 +11646,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 0
   requireReachedTop: 1

@@ -41,7 +41,7 @@ output, planner 두 가지(기본은 move마다 재계획하는 루프, `--onesh
 
 ```
 mlagents-learn config/climber.yaml --run-id=stage1-06                          # Stage 1: Train.unity
-mlagents-learn config/climber.yaml --run-id=stage2-02 --initialize-from=stage1-05-5M   # Stage 2: Train2.unity
+mlagents-learn config/climber.yaml --run-id=stage2-05 --initialize-from=stage1-05-5M   # Stage 2: Train2.unity
 ```
 
 프롬프트가 뜨면 **해당 씬을 열고** 에디터에서 Play --- Stage 1은 `Train.unity`,
@@ -50,9 +50,13 @@ Stage 2는 `Train2.unity`다. behavior 이름(`Climber`)이 같으므로 config�
 루프가 멈춘다.
 
 Stage 2는 `out/<run>-seed<N>/`의 plan + scene JSON을 읽어 올라간다. 랜덤 벽도
-API 호출도 없다. 현재 `Train2.unity`는 **`out/test5-seed`, 50 시퀀스**를 가리키고
-그중 48개가 쓰인다(wall 13·22는 plan이 완등을 못 해 빠진다). `stage2-01`은 test4
-plan으로 2.24M 스텝까지 이미 돌린 run-id라 새 런은 `stage2-02`부터다.
+API 호출도 없다. 현재 `Train2.unity`·`Inference.unity`는 **`out/test6-seed`, 50
+시퀀스**를 가리키고 그중 44개가 쓰인다(wall 1·4·14·15·45·47은 plan이 완등을
+못 해 빠진다 --- 1·14·45는 플래너의 undo 필터 버그, 4·15·47은 양손 매칭 뒤
+발 디딜 곳이 없는 진짜 데드엔드, `worklog/2026-09-27-vlm-planner.md` 참고).
+test6은 벽 난이도를 낮춘 뒤(`bf88487`) 다시 뽑은 plan이라 옛 `test5`(옛 난이도,
+48/50)와는 벽 자체가 다르다. 로컬에 `stage2-02`~`stage2-04`까지 이미 돌아가
+있으니(test5/test4 기준, 미커밋) 새 런은 `stage2-05`부터다.
 
 **VLM 실행**
 

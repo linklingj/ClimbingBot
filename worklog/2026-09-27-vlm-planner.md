@@ -701,3 +701,37 @@ greedy 하한 `0.85 * len(WALLS)`(근사 29/50), 초기 pose 후보 검사. 실�
 **span이 막는다** --- `max_span` 1.75면 8/12, 2.05면 12/12가 풀리고 `hand_step`·crossing은 0/12.
 `check_validator` fixture를 또 고쳤다: two-start 벽에서 right_hand의 첫 후보가 왼손 홀드일 수
 있어서, 비어 있는 후보가 있는 첫 벽을 쓴다.
+
+## 낮춘 난이도로 plan 재생성, Stage 2를 test6로 돌림 (2026-10-10 ~ 11)
+
+`bf88487`로 벽 난이도를 낮추고 50벽을 재익스포트한 뒤, 그 벽들로 VLM plan을 다시 뽑아야
+Stage 2가 새 난이도로 돈다는 것이 지난 worklog의 다음 항목이었다. 사용자 승인을 받고 진행.
+
+**환경 문제.** `vlm` 모듈에 필요한 `python-dotenv`/`openai`가 활성 conda 환경(`ml-agents`) 및
+`base`/`dl`/`genai` 어디에도 없었다. 사용자 선택으로 `ml-agents`에 `pip install python-dotenv
+openai` 설치(`typing-extensions` 4.15→4.16 업그레이드, 기존 `onnx-ir`/`onnx` 버전 불일치는
+이 설치와 무관하게 이미 있던 것). `.env`에 `OPENAI_API_KEY`는 사용자가 직접 채웠다.
+
+**배치 실행.** `gpt-6-luna`, step-by-step, `--no-step-png`로 50벽(seed 0\~49) 순차 실행,
+`out/test6-seed*`. 1차 시도(wall 1\~49)는 시스템 메모리 부족으로 중간(wall 14)에 강제
+종료됨(명령 자체의 문제는 아님) --- wall 0\~13은 정상 완료, wall 14의 미완성 산출물은
+지우고 wall 14\~49만 재실행해 마무리했다. 총 1,736 requests, 완등 **44/50**(test5 48/50).
+자세한 집계와 실패 6벽의 원인 분석(1·14·45는 `plan_steps`의 undo 필터가 유일한 합법 수까지
+지우는 기존 버그, 4·15·47은 양손 매칭 뒤 발 디딜 곳이 없는 진짜 데드엔드)은
+`docs/04_vlm_motion_planner.md`의 test6 절에 옮겨 적었다. **사용자 결정: 지금은 고치지 않고
+다음 단계로 진행.**
+
+**Stage 2 포인터 교체.** `Train2.unity`·`Inference.unity`의 16개 `sequencePrefix`를
+`out/test5-seed` → `out/test6-seed`로, `Stage2Environment.cs`의 기본값과 툴팁도 같이
+바꿨다(48/50 → 44/50). 유니티 에디터를 거치지 않고 텍스트로 직접 치환했다 --- 이전에 test5로
+바꾼 커밋은 에디터가 scene 전체를 재직렬화해 2,686줄이 바뀌었는데, 이번엔 16줄만 바뀌는
+깨끗한 diff가 나온다. `docs/05`의 "현재 씬 설정" 절과 Stage 2 벽 표, `README.md`의 Stage 2
+벽 개수와 VLM 비교 실험 절(난이도 변경 전 수치라는 안내 추가)도 맞춰 고쳤다.
+
+**정리.** 미커밋 `out/test4-seed*`(20개, `.gitignore`로 빠져 있던 로컬 산출물) 삭제. 로컬에
+`results/stage2-02`\~`stage2-04`가 이미 존재해서(미커밋, test5/test4 기준) `CLAUDE.md`의 다음
+런 안내를 `stage2-02`에서 `stage2-05`로 고쳤다.
+
+다음: `stage2-05`를 `out/test6-seed`(44개)로 돌려 `Route/Completed`를 본다. move 수가 늘어난
+쪽(1.70배, test5는 1.60배)이 완등률에 어떻게 반영되는지가 핵심 --- stage1-05 체크포인트에서
+`--initialize-from`. undo 필터 버그와 매칭 비율 문제는 미해결로 남아 있다.

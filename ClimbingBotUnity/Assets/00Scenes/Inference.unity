@@ -3827,7 +3827,7 @@ MonoBehaviour:
   targetHoldColor: {r: 1, g: 0.42, b: 0.1, a: 1}
   successFlashColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
   successFlashSeconds: 0.5
-  sequencePrefix: out/test5-seed
+  sequencePrefix: out/test6-seed
   sequenceCount: 50
   firstSequence: 0
   requireReachedTop: 1
